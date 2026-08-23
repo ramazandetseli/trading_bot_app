@@ -50,7 +50,6 @@ class AlarmKur {
                     padding: const EdgeInsets.symmetric(vertical: 14),
                   ),
                   onPressed: () async {
-                    // TODO: İleride Python /alarm-kur bittiğinde buraya HTTP postu çakacağız amk
                     Navigator.pop(context); // Bottom sheet'i kapat
                     
                     ScaffoldMessenger.of(context).showSnackBar(

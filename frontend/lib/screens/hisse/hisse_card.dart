@@ -10,7 +10,7 @@ class HisseCard extends StatelessWidget {
   final bool isFav;
   final VoidCallback onTap;
 
-  static const String baseUrl = 'http://10.15.166.50:8000';
+
 
  final VoidCallback? onFavoriDegisti;
 
@@ -23,47 +23,49 @@ class HisseCard extends StatelessWidget {
   });
 
   Future<void> _favoriIslem(BuildContext context) async {
-  final String? userId = Supabase.instance.client.auth.currentUser?.id;
-  print("👤 USER ID: $userId");  
-  if (userId == null) {
-    print("🚨 KULLANICI GİRİŞ YAPMAMIŞ!");
-    return;
-  }
+    final String? userId = Supabase.instance.client.auth.currentUser?.id;
+    print("👤 USER ID: $userId");  
+    if (userId == null) {
+      print("🚨 KULLANICI GİRİŞ YAPMAMIŞ!");
+      return;
+    }
 
-  final endpoint = isFav ? '/favori-sil' : '/favori-ekle';
-  print("📡 İSTEK ATILIYOR: $baseUrl$endpoint");  // 👈
-  
-  final url = Uri.parse('$baseUrl$endpoint');
+    final endpoint = isFav ? '/favori-sil' : '/favori-ekle';
+    
+    final String renderUrl = "https://trading-bot-app-za72.onrender.com";
+    final url = Uri.parse('$renderUrl$endpoint');
 
-  try {
-    final response = await http.post(
-      url,
-      headers: {"Content-Type": "application/json"},
-      body: jsonEncode({"user_id": userId, "symbol": hisse.symbol}),
-    );
+    print("📡 İSTEK ATILIYOR: $url");
 
-    debugPrint('🛰️ Favori isteği cevap: ${response.statusCode}');
-    debugPrint('🛰️ Cevap gövdesi: ${response.body}');
+    try {
+      final response = await http.post(
+        url,
+        headers: {"Content-Type": "application/json"},
+        body: jsonEncode({"user_id": userId, "symbol": hisse.symbol}),
+      );
 
-    if (response.statusCode >= 200 && response.statusCode < 300) {
-      onFavoriDegisti?.call();  // 👈 dashboard'a haber ver
-      final mesaj = isFav
-          ? "${hisse.symbol} favorilerden kaldırıldı."
-          : "${hisse.symbol} favorilere eklendi.";
-      ScaffoldMessenger.of(context)
-          .showSnackBar(SnackBar(content: Text(mesaj), backgroundColor: Colors.green));
-    } else {
+      debugPrint('🛰️ Favori isteği cevap: ${response.statusCode}');
+      debugPrint('🛰️ Cevap gövdesi: ${response.body}');
+
+      if (response.statusCode >= 200 && response.statusCode < 300) {
+        onFavoriDegisti?.call();  // Dashboard'a haber ver
+        final mesaj = isFav
+            ? "${hisse.symbol} favorilerden kaldırıldı."
+            : "${hisse.symbol} favorilere eklendi.";
+        ScaffoldMessenger.of(context)
+            .showSnackBar(SnackBar(content: Text(mesaj), backgroundColor: Colors.green));
+      } else {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Favori işlemi başarısız: ${response.statusCode}')),
+        );
+      }
+    } catch (e) {
+      debugPrint("HisseCard Favori Hatası: $e");
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Favori işlemi başarısız: ${response.statusCode}')),
+        SnackBar(content: Text('Favori isteği sırasında hata oluştu: $e')),
       );
     }
-  } catch (e) {
-    debugPrint("HisseCard Favori Hatası: $e");
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text('Favori isteği sırasında hata oluştu: $e')),
-    );
   }
-}
 
  
 

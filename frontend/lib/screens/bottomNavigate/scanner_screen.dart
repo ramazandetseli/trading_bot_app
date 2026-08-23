@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
-import 'package:trading_bot_app/screens/bottomNavigate/dashboard_screen.dart';
 import 'package:trading_bot_app/screens/hisse/hisse_card.dart';
 import 'package:trading_bot_app/models/hisse_model.dart';
 import 'dart:convert';
@@ -20,6 +19,9 @@ class _ScannerScreenState extends State<ScannerScreen> {
   bool yukleniyor=false;
   String? seciliMod;
 
+  // 🎯 Canlı Render URL'miz
+  final String url = "https://trading-bot-app-za72.onrender.com";
+
   Future<void> stratejiBaslat(String mode) async {
     setState(() {
       yukleniyor = true;
@@ -28,10 +30,8 @@ class _ScannerScreenState extends State<ScannerScreen> {
     });
 
     try {
-      //final response = await http.get(
-        //Uri.parse('https://trading-bot-backend-2pyt.onrender.com/tara/$mode'));
-      // 🎯 DOĞRU KULLANIM: Lokal IP'nin sonuna mutlaka /tara/$mode uzantısını eklemelisin!
-final response = await http.get(Uri.parse('http://10.15.166.50:8000/tara/$mode'));
+      // 🎯 Canlı adrese istek atıyoruz
+      final response = await http.get(Uri.parse('$url/tara/$mode'));
       if (response.statusCode == 200) {
         final data = json.decode(response.body);
         setState(() {
@@ -40,40 +40,35 @@ final response = await http.get(Uri.parse('http://10.15.166.50:8000/tara/$mode')
         });
       }
     } catch (e) {
-      // ignore: avoid_print
       print("Aga hata: $e");
       setState(() { yukleniyor = false; });
     }
   }
 
   Future<void> endeksleriGetir() async {
-  try {
-    //final response = await http.get(Uri.parse('https://trading-bot-backend-2pyt.onrender.com/endeksler'));
-    // 🎯 DOĞRU KULLANIM: Sonuna mutlaka /endeksler ekle aga!
-final response = await http.get(Uri.parse('http://10.15.166.50:8000/endeksler'));
-    if (response.statusCode == 200) {
-      final data = json.decode(response.body);
-      // setState diyerek Flutter'a "Aga veri geldi, ekranı tazele" diyoruz
-      setState(() {
-        endeksler = data['veriler'];
-      });
+    try {
+      // 🎯 Canlı adrese istek atıyoruz
+      final response = await http.get(Uri.parse('$url/endeksler'));
+      if (response.statusCode == 200) {
+        final data = json.decode(response.body);
+        setState(() {
+          endeksler = data['veriler'];
+        });
+      }
+    } catch (e) {
+      print("Endeksler çekilirken hata oluştu: $e");
     }
-  } catch (e) {
-    print("Endeksler çekilirken hata oluştu: $e");
   }
-}
 
-@override
-void initState() {
-  super.initState();
-  // 1. Uygulama açılır açılmaz veriyi hemen çek
-  endeksleriGetir(); 
-  
-  // 2. Sonra her 5 dakikada bir güncellemeye devam et
-  Timer.periodic(const Duration(minutes: 5), (timer) {
-    endeksleriGetir();
-  });
-}
+  @override
+  void initState() {
+    super.initState();
+    endeksleriGetir(); 
+    
+    Timer.periodic(const Duration(minutes: 5), (timer) {
+      endeksleriGetir();
+    });
+  }
 
 String _getModAciklamasi(String? mod) {
   switch (mod) {

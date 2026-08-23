@@ -5,7 +5,7 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:trading_bot_app/models/rehber_models.dart';
 
 class ApiService {
-  final String url = "https://trading-bot-backend-2pyt.onrender.com";
+  final String url = "https://trading-bot-app-za72.onrender.com";
   // final String url = "http://localhost:8000";
   Future<List<dynamic>> hisseleriGetir() async {
     try {
@@ -38,12 +38,11 @@ class ApiService {
       ));
 
       debugPrint("AI Analiz Durum Kodu: ${response.statusCode}");
-      debugPrint("Gelen Ham Yanıt amk: ${response.body}");
+      debugPrint("Gelen Yanıt: ${response.body}");
 
       if (response.statusCode == 200) {
         final Map<String, dynamic> resData = json.decode(response.body);
         
-        // Senin orijinal sistem: main.py'dan gelen 'data' haritasını direkt fırlatır!
         if (resData['status'] == 'success' && resData['data'] != null) {
           return resData['data'] as Map<String, dynamic>;
         }
@@ -80,7 +79,7 @@ class ApiService {
         if (response.statusCode == 200) {
           return json.decode(response.body);
         } else {
-          print("API Hatası amk: Kod ${response.statusCode}");
+          print("API Hatası: Kod ${response.statusCode}");
           return {'status': 'error', 'data': []};
         }
       } catch (e) {
@@ -88,4 +87,24 @@ class ApiService {
         return {'status': 'error', 'data': []};
       }
     }
+    // 🌟 Favori Ekleme / Silme İşlemleri
+  Future<bool> favoriIslemYap(String userId, String symbol, bool isFav) async {
+    final endpoint = isFav ? '/favori-sil' : '/favori-ekle';
+    final requestUrl = Uri.parse('$url$endpoint');
+
+    try {
+      final response = await http.post(
+        requestUrl,
+        headers: {"Content-Type": "application/json"},
+        body: jsonEncode({"user_id": userId, "symbol": symbol}),
+      );
+
+      return response.statusCode >= 200 && response.statusCode < 300;
+    } catch (e) {
+      debugPrint("Favori işlem hatası: $e");
+      return false;
+    }
+  }
 }
+
+

@@ -27,8 +27,8 @@ class _DashboardScreenState extends State<DashboardScreen> {
 
   final TextEditingController _searchController = TextEditingController();
 
-  //final String _localUrl = "https://trading-bot-backend-2pyt.onrender.com"; 
-  static const String _localUrl = 'http://localhost:8000';
+  final String url = "https://trading-bot-app-za72.onrender.com";  
+  //static const String _localUrl = 'http://localhost:8000';
   @override
   void initState() {
     super.initState();
@@ -70,7 +70,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
   void verileriTazele() async {
     setState(() => yukleniyor = true);
     try {
-      final response = await http.get(Uri.parse("$_localUrl/tara"));
+      final response = await http.get(Uri.parse("$url/tara"));
       if (response.statusCode == 200) {
         Map<String, dynamic> decodedData = json.decode(response.body);
         List<dynamic> results = decodedData['hisseler'] ?? [];
@@ -94,7 +94,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
     try {
       final response = await http.post(
         Uri.parse(
-          '$_localUrl/alarm-kur?symbol=$symbol&price=$targetPrice',
+          '$url/alarm-kur?symbol=$symbol&price=$targetPrice',
         ),
       );
       if (response.statusCode == 200 && mounted) {
@@ -355,7 +355,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
   if (userId == null) return;
 
   try {
-    final response = await http.get(Uri.parse("$_localUrl/favoriler/$userId"));
+    final response = await http.get(Uri.parse("$url/favoriler/$userId"));
     if (response.statusCode == 200) {
       final data = json.decode(response.body);
       final List<dynamic> liste = data['data'] ?? [];

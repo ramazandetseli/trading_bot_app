@@ -4,6 +4,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 import requests
 import scanner
+import os
 import veriTabani
 from pydantic import BaseModel
 from fastapi.responses import HTMLResponse # Bunu en üste ekle
@@ -58,7 +59,7 @@ def ai_analiz(symbol: str, rsi: str, vol: str, price: str, change: str):
     if abs(change_val) > 4.0: risk_skoru += 15
     risk_skoru = min(risk_skoru, 95.0)
 
-    api_key = "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"
+    pi_key = os.getenv("GROQ_API_KEY")    
     url = "https://api.groq.com/openai/v1/chat/completions"
     
     headers = {
