@@ -1,10 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
-import 'package:trading_bot_app/api/premium_service.dart';
+import 'package:trading_bot_app/services/premium_service.dart';
 import 'package:trading_bot_app/main.dart';
-import 'package:trading_bot_app/screens/services/auth_service.dart';
-import 'package:trading_bot_app/screens/settings/authchangepassword.dart';
-import 'package:trading_bot_app/screens/settings/changepassword.dart';
+import 'package:trading_bot_app/services/auth_service.dart';
+import 'package:trading_bot_app/screens/profile/settings/authchangepassword.dart';
 
 class AuthScreen extends StatefulWidget {
   const AuthScreen({super.key});

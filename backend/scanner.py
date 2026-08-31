@@ -25,7 +25,7 @@ def get_scan_results():
             "description"               # [13] Şirket Adı
         ], 
         "sort": {"sortBy": "name", "sortOrder": "asc"},
-        "range": [0, 550]
+        "range": [0, 800]
     }
 
     try:

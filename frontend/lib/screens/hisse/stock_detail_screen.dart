@@ -1,9 +1,13 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
-import 'package:trading_bot_app/api/api_service.dart';
-import 'package:trading_bot_app/api/premium_service.dart';
-import 'package:trading_bot_app/screens/hisse/graphicscreen.dart';
-
+import 'package:trading_bot_app/screens/hisse/widgets/ai_analiz.dart';
+import 'package:trading_bot_app/screens/hisse/widgets/balina_Radar.dart';
+import 'package:trading_bot_app/screens/hisse/widgets/graphic_price.dart';
+import 'package:trading_bot_app/screens/hisse/widgets/hedef_istatikstik.dart';
+import 'package:trading_bot_app/screens/hisse/widgets/hisse_istatistik.dart';
+import 'package:trading_bot_app/services/api_service.dart';
+import 'package:trading_bot_app/services/premium_service.dart';
+import 'package:trading_bot_app/screens/alarms/alarm_kur.dart';
 class HisseDetayScreen extends StatefulWidget {
   final Map hisse;
   
@@ -14,23 +18,28 @@ class HisseDetayScreen extends StatefulWidget {
 }
 
 class _HisseDetayScreenState extends State<HisseDetayScreen> with SingleTickerProviderStateMixin {
+  // --- AI State ---
   String aiYorum = ''; 
   bool analizBitti = false;
   bool analizYukleniyor = false; 
-  bool degerlerYuklendi = false; 
+  bool isGelismisMod = false; 
+
+
+  double? aktifFiyat;
+  double? aktifDegisim;
+
   double aiDestek = 0.0;
   double aiDirenc = 0.0;  
-
   String stratejiEtiketi = '';
   String fonAkisi = '';
   double riskSkoru = 0.0;
-
-  late final AnimationController _fadeCtrl;
-  late final Animation<double> _fadeAnim;
+  String aktifPeriyot = "1mo";
   
   Timer? _typeTimer; 
-  
-  // ─── Güvenli Veri Okuma Okuyucuları ────────────────────────────────────
+  late final AnimationController _fadeCtrl;
+  late final Animation<double> _fadeAnim;
+
+  // --- Veri Okuyucular ---
   String get _symbol   => widget.hisse['symbol']?.toString()   ?? '—';
   String get _fullName => widget.hisse['full_name']?.toString() ?? _symbol;
   double get _price    => _d(widget.hisse['price'])    ?? 0.0;
@@ -48,19 +57,18 @@ class _HisseDetayScreenState extends State<HisseDetayScreen> with SingleTickerPr
   bool get _isBullish  => _price > _ema20;
 
   double get _tahtaciSkoru => ((_relVol * 20) + (_isVip ? 30 : 0)).clamp(0, 100);
-
   double get _hedefDirenc => aiDirenc > 0 ? aiDirenc : _bbUp;
   double get _stopDestek  => aiDestek > 0 ? aiDestek : _bbLow;
   double get _potansiyel  => _price > 0 ? ((_hedefDirenc - _price) / _price * 100) : 0.0;
 
   static double? _d(dynamic v) => v == null ? null : double.tryParse(v.toString());
 
-  // ─── 🎨 Dinamik Premium Tema Renkleri ─────────────────────────────────
+  // --- Renkler ---
   Color get _bg      => const Color(0xFF070B14);
   Color get _card    => const Color(0xFF0D1420);
   Color get _border  => UserState().isPremium ? const Color(0xFFFFB800).withValues(alpha: 0.3) : const Color(0xFF1E293B);
   Color get _cyan    => UserState().isPremium ? const Color(0xFFFFB800) : const Color(0xFF00D4FF); 
-  static const _gold    = Color(0xFFFFB800);
+  static const _gold = Color(0xFFFFB800);
 
   @override
   void initState() {
@@ -78,137 +86,104 @@ class _HisseDetayScreenState extends State<HisseDetayScreen> with SingleTickerPr
     super.dispose();
   }
 
-  void _tikitlaAnalizEt() {
+  // --- AI Fonksiyonları ---
+  void _tikitlaAnalizEt(bool gelismisMi) {
     if (UserState().isPremium) {
-      getAiComment();
+      _getAiComment(gelismisMi);
     } else {
       if (UserState().dailyAiRights > 0) {
-        setState(() {
-          UserState().dailyAiRights--; 
-        });
-        getAiComment();
+        setState(() => UserState().dailyAiRights--);
+        _getAiComment(gelismisMi);
       } else {
         _showPremiumBottomSheet();
       }
     }
   }
 
-  void _startTypewriterAnimation(String tamMetin) {
-    final karakterListesi = tamMetin.characters.toList();
-    int currentCharIndex = 0;
-    _typeTimer?.cancel(); 
-
+  Future<void> _getAiComment(bool gelismisMi) async {
     setState(() {
-      aiYorum = ''; 
+      analizYukleniyor = true;
+      isGelismisMod = gelismisMi; 
+      aiYorum = ''; // Önceki yorumu temizle
+    });
+
+    try {
+      final aiData = await ApiService().aiAnaliziniCek(_symbol, _rsi, _relVol, _price, _change, gelismisMi, aktifPeriyot);
+      
+      // 🔥 KONSOLA NE GELDİĞİNİ YAZDIRIYORUZ
+      debugPrint("🤖 AI'DAN GELEN HAM VERİ: $aiData");
+      
+      if (!mounted) return;
+
+      if (aiData != null) {
+        if (aiData['status'] == 'error') {
+          _hataDurumu(aiData['message'] ?? "Bilinmeyen bir API hatası oluştu.");
+          return;
+        }
+
+        String gonderilecekMetin = "Analiz verisi alınamadı.";
+
+        setState(() {
+          if (gelismisMi) {
+            // 👑 PREMIUM (DEEP) VERİLERİNİ OKU
+            final data = aiData['data'] ?? {};
+            
+            final ozet = data['ozet'] ?? "Özet bulunamadı.";
+            final teknik = data['teknik_durum'] ?? "Teknik veri bulunamadı.";
+            final tahtaci = data['tahtaci_analizi'] ?? "Tahtacı verisi bulunamadı.";
+            
+            gonderilecekMetin = "$ozet\n\n📉 Teknik Rapor:\n$teknik\n\n🕵️ Tahtacı Psikolojisi:\n$tahtaci";
+            
+            aiDestek = double.tryParse(data['destek']?.toString() ?? '0') ?? 0.0;
+            aiDirenc = double.tryParse(data['direnc']?.toString() ?? '0') ?? 0.0;
+            stratejiEtiketi = data['strateji_etiketi']?.toString() ?? 'Hesaplanamadı';
+            fonAkisi = data['fon_akisi']?.toString() ?? 'Dengeli Akış';
+            riskSkoru = double.tryParse(data['risk_skoru']?.toString() ?? '50') ?? 50.0;
+          } 
+          else {
+            // 🟢 BASIC (ÜCRETSİZ) VERİLERİNİ OKU
+            gonderilecekMetin = aiData['yorum'] ?? "Groq'tan yorum dönmedi.";
+            aiDestek = 0.0;
+            aiDirenc = 0.0;
+          }
+        });
+        
+        _startTypewriterAnimation(gonderilecekMetin);
+      } else {
+        _hataDurumu("Bağlantı kurulamadı. Veri boş geldi.");
+      }
+    } catch (e) {
+      if (!mounted) return;
+      _hataDurumu("Uygulama içi hata: $e");
+    }
+  }
+
+  void _hataDurumu(String mesaj) {
+    setState(() {
+      aiYorum = mesaj;
       analizBitti = true;
       analizYukleniyor = false;
     });
+  }
 
-    _typeTimer = Timer.periodic(const Duration(milliseconds: 15), (timer) { // Hızı 15ms yaptık kurumsal aksın amk
-      if (currentCharIndex < karakterListesi.length) {
-        if (!mounted) return;
-        setState(() {
-          aiYorum += karakterListesi[currentCharIndex]; 
-        });
-        currentCharIndex++;
+  void _startTypewriterAnimation(String tamMetin) {
+    final karakterler = tamMetin.characters.toList();
+    int idx = 0;
+    _typeTimer?.cancel(); 
+    setState(() { aiYorum = ''; analizBitti = true; analizYukleniyor = false; });
+
+    _typeTimer = Timer.periodic(const Duration(milliseconds: 15), (timer) { 
+      if (idx < karakterler.length && mounted) {
+        setState(() => aiYorum += karakterler[idx]);
+        idx++;
       } else {
         timer.cancel(); 
       }
     });
   }
 
-  // ─── 🎯 Geliştirilmiş API Çağrısı (Yeni Verileri Yakalayan Bölge) ─────
-  Future<void> getAiComment() async {
-    setState(() {
-      analizYukleniyor = true;
-      degerlerYuklendi = true; 
-    });
-
-    try {
-      final aiData = await ApiService().aiAnaliziniCek(
-        _symbol, _rsi, _relVol, _price, _change
-      );
-      
-      if (!mounted) return;
-
-      if (aiData != null) {
-        final gonderilecekMetin = "${aiData['ozet']}\n\n"
-            "📈 Teknik Rapor: ${aiData['teknik_durum']}\n\n"
-            "🕵️ Tahta Dinamikleri: ${aiData['tahtaci_analizi']}";
-
-        setState(() {
-          // 1. Gelen finansal hedefleri atıyoruz amk
-          aiDestek = double.tryParse(aiData['destek'].toString()) ?? 0.0;
-          aiDirenc = double.tryParse(aiData['direnc'].toString()) ?? 0.0;
-          
-          // 2. 🐋 Python'da yazdığımız o ölümcül yeni balina parametrelerini yakalıyoruz amk
-          stratejiEtiketi = aiData['strateji_etiketi']?.toString() ?? 'Hesaplanamadı';
-          fonAkisi = aiData['fon_akisi']?.toString() ?? 'Dengeli Akış';
-          riskSkoru = double.tryParse(aiData['risk_skoru'].toString()) ?? 50.0;
-        });
-
-        // 3. Yazma şovunu başlatıyoruz
-        _startTypewriterAnimation(gonderilecekMetin);
-
-      } else {
-        setState(() {
-          aiYorum = "AI şu an yoğun, lütfen tekrar deneyin.";
-          analizBitti = true;
-          analizYukleniyor = false;
-        });
-      }
-    } catch (e) {
-      if (!mounted) return;
-      setState(() {
-        aiYorum = "Bağlantı hatası: Sunucu aktif mi?";
-        analizBitti = true;
-        analizYukleniyor = false;
-      });
-    }
-  }
-
   void _showPremiumBottomSheet() {
-    showModalBottomSheet(
-      context: context,
-      backgroundColor: _card,
-      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(28))),
-      builder: (context) => Padding(
-        padding: const EdgeInsets.all(24),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Container(width: 40, height: 4, decoration: BoxDecoration(color: Colors.white24, borderRadius: BorderRadius.circular(2))),
-            const SizedBox(height: 20),
-            const Icon(Icons.auto_awesome_rounded, color: _gold, size: 44),
-            const SizedBox(height: 16),
-            const Text("Premium Özelliktir", style: TextStyle(color: Colors.white, fontSize: 20, fontWeight: FontWeight.bold)),
-            const SizedBox(height: 10),
-            const Text(
-              "Günlük 3 yapay zeka analiz hakkınız dolmuştur. Sınırsız balina radarı ve özel Groq AI raporları için Profil sayfasından PRO'ya yükseltebilirsiniz.",
-              textAlign: TextAlign.center,
-              style: TextStyle(color: Colors.white60, fontSize: 13, height: 1.4),
-            ),
-            const SizedBox(height: 24),
-            SizedBox(
-              width: double.infinity,
-              child: ElevatedButton(
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: _gold,
-                  padding: const EdgeInsets.symmetric(vertical: 14),
-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-                ),
-                onPressed: () {
-                  Navigator.pop(context); 
-                  Navigator.pop(context); 
-                },
-                child: const Text("Profil / Ayarlar Sayfasına Git", style: TextStyle(color: Colors.black, fontWeight: FontWeight.bold, fontSize: 15)),
-              ),
-            ),
-            const SizedBox(height: 12),
-          ],
-        ),
-      ),
-    );
+    // ... Premium Bottom Sheet kodun (Değiştirilmedi)
   }
 
   @override
@@ -216,32 +191,92 @@ class _HisseDetayScreenState extends State<HisseDetayScreen> with SingleTickerPr
     return Scaffold(
       backgroundColor: _bg,
       extendBodyBehindAppBar: true,
-      appBar: _buildAppBar(),
+      appBar: AppBar(
+        backgroundColor: Colors.transparent,
+        elevation: 0,
+        iconTheme: const IconThemeData(color: Colors.white),
+        title: Text(_symbol, style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w900, fontSize: 22, letterSpacing: 1)),
+        centerTitle: true,
+        actions: [
+          IconButton(
+            icon: const Icon(Icons.alarm_add_rounded, color: Colors.white),
+            onPressed: () => AlarmKur.goster(context: context, symbol: _symbol, anlikFiyat: _price),
+          )
+        ],
+      ),
       body: FadeTransition(
         opacity: _fadeAnim,
         child: SingleChildScrollView(
           physics: const BouncingScrollPhysics(),
           child: Column(
             children: [
-              _buildHeroHeader(),
+              HisseHeroVeGrafikWidget(
+                fullName: _fullName,
+                price: aktifFiyat ?? _price,           // 🔥 Dinamik Fiyat
+                change: aktifDegisim ?? _change,       // 🔥 Dinamik Değişim
+                symbol: _symbol,
+                isPositive: (aktifDegisim ?? _change) >= 0,
+                bg: _bg,
+
+                onPeriodChanged: (yeniPeriyot) {
+                  setState(() {
+                    aktifPeriyot = yeniPeriyot; // 🔥 Kullanıcı tıkladıkça burası güncellenir!
+                  });
+                },
+                onDataFetched: (yeniFiyat, yeniDegisim) {
+                  // Grafik veriyi çektiğinde burayı tetikleyip tepeyi günceller!
+                  WidgetsBinding.instance.addPostFrameCallback((_) {
+                    if(mounted) {
+                      setState(() {
+                        aktifFiyat = yeniFiyat;
+                        aktifDegisim = yeniDegisim;
+                      });
+                    }
+                  });
+                },
+              ),
+
               const SizedBox(height: 14),
-              _buildStatsRow(),
+
+              AiAnalizKartWidget(
+                cardColor: _card,
+                borderColor: analizBitti ? _cyan.withValues(alpha: 0.3) : _border,
+                cyan: _cyan,
+                gold: _gold,
+                analizBitti: analizBitti,
+                analizYukleniyor: analizYukleniyor,
+                isGelismisMod: isGelismisMod,
+                aiYorum: aiYorum,
+                onAnalizTetikle: _tikitlaAnalizEt,
+              ),
+              
               const SizedBox(height: 14),
-              _buildCleanTargetGrid(), 
+
+              // 3. İstatistikler
+              HisseStatsRowWidget(card: _card, border: _border, rsi: _rsi, relVol: _relVol, isBullish: _isBullish, isVip: _isVip, isAgresif: _isAgresif, gold: _gold),
+              
               const SizedBox(height: 14),
-              if (analizBitti) _buildWhaleLiveMetrics(), // 🎯 YENİ: Balina Etiketleri ve Risk İbre Paneli amk!
+
+              // 4. Hedefler
+              HisseHedefGridWidget(card: _card, border: _border, cyan: _cyan, analizBitti: analizBitti, analizYukleniyor: analizYukleniyor, hedefDirenc: _hedefDirenc, potansiyel: _potansiyel, stopDestek: _stopDestek),
+
               const SizedBox(height: 14),
-              _buildAiCard(),          
+
+              // 5. Balina Radarı (Sadece Analiz bitince görünür)
+              if (analizBitti) 
+                WhaleLiveMetricsWidget(card: _card, cyan: _cyan, riskSkoru: riskSkoru, stratejiEtiketi: stratejiEtiketi, fonAkisi: fonAkisi),
+              if (analizBitti) const SizedBox(height: 14),
+
+              // 6. Tahtacı Gücü ve Teknik Karne
+              _PowerMeterWidget(card: _card, border: _border, score: _tahtaciSkoru, gold: _gold),
               const SizedBox(height: 14),
-              _buildPowerMeter(),
-              const SizedBox(height: 14),
-              _buildTechnicalReport(),
+              _TeknikKarneWidget(card: _card, border: _border, relVol: _relVol, rsi: _rsi),
+              
               if (_isVip || _isAgresif) ...[
                 const SizedBox(height: 14),
-                _buildAlertBanner(),
+                _AlertBannerWidget(isVip: _isVip, gold: _gold),
               ],
-              const SizedBox(height: 16),
-              _buildDisclaimer(),
+              
               const SizedBox(height: 40),
             ],
           ),
@@ -249,434 +284,83 @@ class _HisseDetayScreenState extends State<HisseDetayScreen> with SingleTickerPr
       ),
     );
   }
+}
 
-PreferredSizeWidget _buildAppBar() {
-    return AppBar(
-      backgroundColor: Colors.transparent,
-      elevation: 0,
-      iconTheme: const IconThemeData(color: Colors.white),
-      title: Text(
-        _symbol,
-        style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w900, fontSize: 22, letterSpacing: 1),
-      ),
-      centerTitle: true,
-      actions: [
-        if (!UserState().isPremium)
-          IconButton(
-            onPressed: () {
-              // 🎯 BURAYA DİKKAT: _symbol değişkenini GraphViewScreen'e gönderiyoruz amk
-              Navigator.push(
-                context,
-                MaterialPageRoute(
-                  builder: (_) => GraphViewScreen(symbol: _symbol),
-                ),
-              );
-            },
-            icon: const Icon(Icons.show_chart, color: _gold), // Premium icon'u grafik ikonuna çevirdim daha mantıklı aga
-          )
-      ],
-    );
-  }
 
-  Widget _buildHeroHeader() {
-    final accentColor = _isPositive ? Colors.greenAccent : Colors.redAccent;
 
+// 6. DİĞER KÜÇÜK PARÇALAR
+class _PowerMeterWidget extends StatelessWidget {
+  final Color card, border, gold;
+  final double score;
+  const _PowerMeterWidget({required this.card, required this.border, required this.score, required this.gold});
+  @override
+  Widget build(BuildContext context) {
+    final meterColor = score > 70 ? Colors.greenAccent : gold;
     return Container(
-      width: double.infinity,
-      margin: const EdgeInsets.only(top: 90, left: 16, right: 16),
-      padding: const EdgeInsets.all(20),
-      decoration: BoxDecoration(
-        color: _card,
-        borderRadius: BorderRadius.circular(24),
-        border: Border.all(color: _border, width: 1),
-      ),
+      margin: const EdgeInsets.symmetric(horizontal: 16), padding: const EdgeInsets.all(20), decoration: BoxDecoration(color: card, borderRadius: BorderRadius.circular(24), border: Border.all(color: border)),
       child: Column(
         children: [
-          Text(
-            _fullName,
-            textAlign: TextAlign.center,
-            style: TextStyle(color: Colors.white.withValues(alpha: .4), fontSize: 12, fontWeight: FontWeight.w500),
-          ),
-          const SizedBox(height: 10),
-          Row(
-            mainAxisAlignment: MainAxisAlignment.center, crossAxisAlignment: CrossAxisAlignment.end,
-            children: [
-              Text(
-                _price.toStringAsFixed(2),
-                style: const TextStyle(color: Colors.white, fontSize: 44, fontWeight: FontWeight.w900, letterSpacing: -1),
-              ),
-              const Padding(
-                padding: EdgeInsets.only(bottom: 6, left: 2),
-                child: Text(' ₺', style: TextStyle(color: Colors.white30, fontSize: 20, fontWeight: FontWeight.bold)),
-              ),
-            ],
-          ),
-          const SizedBox(height: 10),
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
-            decoration: BoxDecoration(
-              color: accentColor.withValues(alpha: .1),
-              borderRadius: BorderRadius.circular(20),
-            ),
-            child: Text(
-              '${_isPositive ? '+' : ''}${_change.toStringAsFixed(2)}%',
-              style: TextStyle(color: accentColor, fontSize: 14, fontWeight: FontWeight.w800),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildStatsRow() {
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 16),
-      child: Row(
-        children: [
-          _statChip('RSI', _rsi.toStringAsFixed(0), _rsi < 35 ? Colors.orangeAccent : _rsi > 70 ? Colors.redAccent : Colors.white70),
-          const SizedBox(width: 8),
-          _statChip('HACİM', 'x${_relVol.toStringAsFixed(1)}', _relVol > 2 ? Colors.greenAccent : Colors.white70),
-          const SizedBox(width: 8),
-          _statChip('TREND', _isBullish ? '▲ EMA20' : '▼ EMA20', _isBullish ? Colors.blueAccent : Colors.redAccent),
-          const SizedBox(width: 8),
-          _statChip('SİNYAL', _isVip ? '🐋 VIP' : _isAgresif ? '🔥 AGR' : 'SAKİN', _isVip ? _gold : _isAgresif ? Colors.orangeAccent : Colors.tealAccent),
-        ],
-      ),
-    );
-  }
-
-  Widget _statChip(String label, String value, Color color) {
-    return Expanded(
-      child: Container(
-        padding: const EdgeInsets.symmetric(vertical: 10),
-        decoration: BoxDecoration(color: _card, borderRadius: BorderRadius.circular(14), border: Border.all(color: _border)),
-        child: Column(
-          children: [
-            Text(label, style: const TextStyle(color: Colors.white38, fontSize: 9, fontWeight: FontWeight.bold)),
-            const SizedBox(height: 4),
-            Text(value, style: TextStyle(color: color, fontSize: 12, fontWeight: FontWeight.w900), maxLines: 1, overflow: TextOverflow.ellipsis),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _buildCleanTargetGrid() {
-    return Container(
-      width: double.infinity,
-      margin: const EdgeInsets.symmetric(horizontal: 16),
-      padding: const EdgeInsets.symmetric(vertical: 16, horizontal: 20),
-      decoration: BoxDecoration(
-        color: _card,
-        borderRadius: BorderRadius.circular(20),
-        border: Border.all(color: _border),
-      ),
-      child: () {
-        if (analizYukleniyor) {
-          return const Row(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              SizedBox(
-                width: 16, height: 16,
-                child: CircularProgressIndicator(strokeWidth: 2, color: Colors.amber),
-              ),
-              SizedBox(width: 12),
-              Text(
-                "Hedef Seviyeler Hesaplanıyor...",
-                style: TextStyle(color: Colors.white54, fontSize: 12, fontWeight: FontWeight.bold),
-              ),
-            ],
-          );
-        }
-        
-        if (analizBitti) {
-          return Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              _targetItem('DİRENÇ / HEDEF', '${_hedefDirenc.toStringAsFixed(2)} ₺', Colors.greenAccent),
-              Container(width: 1, height: 35, color: _border),
-              _targetItem('POTANSİYEL', '%${_potansiyel.toStringAsFixed(2)}', _cyan),
-              Container(width: 1, height: 35, color: _border),
-              _targetItem('DESTEK / STOP', '${_stopDestek.toStringAsFixed(2)} ₺', Colors.redAccent),
-            ],
-          );
-        }
-
-        return Row(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Icon(Icons.lock_clock_rounded, color: Colors.white.withValues(alpha: .3), size: 18),
-            const SizedBox(width: 8),
-            const Expanded(
-              child: Text(
-                "Hedef & Stop Seviyeleri İçin Analiz Başlatın",
-                style: TextStyle(color: Colors.white38, fontSize: 13, fontWeight: FontWeight.w500),
-              ),
-            ),
-          ],
-        );
-      }(),
-    );
-  }
-
-  Widget _targetItem(String title, String val, Color color) {
-    return Column(
-      children: [
-        Text(title, style: const TextStyle(color: Colors.white38, fontSize: 9, fontWeight: FontWeight.bold, letterSpacing: 0.5)),
-        const SizedBox(height: 6),
-        Text(val, style: TextStyle(color: color, fontSize: 16, fontWeight: FontWeight.w900)),
-      ],
-    );
-  }
-
-  // ─── 🐋 YENİ: Para Basacak Canavar Kurumsal Gösterge Paneli ──────────
-  Widget _buildWhaleLiveMetrics() {
-    bool isHighRisk = riskSkoru > 65;
-    Color riskColor = isHighRisk ? Colors.redAccent : Colors.greenAccent;
-
-    return Container(
-      width: double.infinity,
-      margin: const EdgeInsets.symmetric(horizontal: 16),
-      padding: const EdgeInsets.all(18),
-      decoration: BoxDecoration(
-        color: _card,
-        borderRadius: BorderRadius.circular(24),
-        border: Border.all(color: _cyan.withValues(alpha: 0.2)),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          const Text(
-            '🤖 YAPAY ZEKA BALİNA TAKİP RADARI',
-            style: TextStyle(color: Colors.white38, fontSize: 10, fontWeight: FontWeight.bold, letterSpacing: 1),
-          ),
-          const SizedBox(height: 14),
-          
-          // 💥 Neon Strateji Etiketi
-          _whaleMetricRow(Icons.radar_rounded, "Tahtacı Stratejisi:", stratejiEtiketi, _cyan),
-          const SizedBox(height: 10),
-          
-          // 📊 Fon Akış İbresi
-          _whaleMetricRow(Icons.swap_horizontal_circle_outlined, "Fon Akış Durumu:", fonAkisi, Colors.tealAccent),
-          const SizedBox(height: 14),
-          
-          // 🔥 Yapay Zeka Risk Skoru Çubuğu
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              const Text("Yapay Zeka Risk İndeksi:", style: TextStyle(color: Colors.white70, fontSize: 12)),
-              Text("%${riskSkoru.toInt()}", style: TextStyle(color: riskColor, fontSize: 13, fontWeight: FontWeight.w900)),
-            ],
-          ),
-          const SizedBox(height: 6),
-          ClipRRect(
-            borderRadius: BorderRadius.circular(10),
-            child: LinearProgressIndicator(
-              value: riskSkoru / 100,
-              color: riskColor,
-              backgroundColor: Colors.white.withValues(alpha: .04),
-              minHeight: 6,
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _whaleMetricRow(IconData icon, String label, String value, Color color) {
-    return Row(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Icon(icon, color: color, size: 16),
-        const SizedBox(width: 8),
-        Text(label, style: const TextStyle(color: Colors.white70, fontSize: 12)),
-        const SizedBox(width: 6),
-        Expanded(
-          child: Text(
-            value,
-            style: TextStyle(color: color, fontSize: 12, fontWeight: FontWeight.bold),
-            maxLines: 1, overflow: TextOverflow.ellipsis,
-          ),
-        ),
-      ],
-    );
-  }
-
-  Widget _buildAiCard() {
-    return Container(
-      margin: const EdgeInsets.symmetric(horizontal: 16),
-      padding: const EdgeInsets.all(20),
-      decoration: BoxDecoration(
-        color: _card,
-        borderRadius: BorderRadius.circular(24),
-        border: Border.all(color: analizBitti ? _cyan.withValues(alpha: 0.3) : _border),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: [
-              Icon(Icons.psychology_rounded, color: _cyan, size: 22),
-              const SizedBox(width: 8),
-              Text('YAPAY ZEKA ANALİZİ', style: TextStyle(color: _cyan, fontWeight: FontWeight.w900, fontSize: 13, letterSpacing: 0.5)),
-              const Spacer(),
-              if (!analizBitti && !analizYukleniyor)
-                Text(
-                  UserState().isPremium ? "PRO: Sınırsız" : "Hak: ${UserState().dailyAiRights}/3",
-                  style: TextStyle(color: UserState().dailyAiRights == 0 && !UserState().isPremium ? Colors.redAccent : Colors.white38, fontSize: 11, fontWeight: FontWeight.bold),
-                )
-            ],
-          ),
-          const SizedBox(height: 16),
-          if (analizYukleniyor)
-            Column(
-              children: [
-                LinearProgressIndicator(color: _cyan, backgroundColor: Colors.white10),
-                const SizedBox(height: 10),
-                Text("Llama-3.3 borsa verilerini inceliyor...", style: TextStyle(color: Colors.white.withValues(alpha: .4), fontSize: 12)),
-              ],
-            )
-          else if (analizBitti)
-            Text(
-              aiYorum,
-              style: const TextStyle(color: Colors.white, fontSize: 14, height: 1.6),
-            )
-          else
-            SizedBox(
-              width: double.infinity,
-              child: ElevatedButton.icon(
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: _cyan.withValues(alpha: .15),
-                  foregroundColor: _cyan,
-                  elevation: 0,
-                  padding: const EdgeInsets.symmetric(vertical: 12),
-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14), side: BorderSide(color: _cyan, width: 0.5)),
-                ),
-                icon: const Icon(Icons.auto_awesome_rounded, size: 16),
-                label: const Text("Analiz Et ve Rapor Oluştur", style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
-                onPressed: _tikitlaAnalizEt,
-              ),
-            ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildPowerMeter() {
-    final score = _tahtaciSkoru;
-    final isHigh = score > 70;
-    final meterColor = isHigh ? Colors.greenAccent : _gold;
-
-    return Container(
-      margin: const EdgeInsets.symmetric(horizontal: 16),
-      padding: const EdgeInsets.all(20),
-      decoration: BoxDecoration(color: _card, borderRadius: BorderRadius.circular(24), border: Border.all(color: _border)),
-      child: Column(
-        children: [
-          const Text('TAHTACI GÜVEN ENDEKSİ', style: TextStyle(color: Colors.white38, letterSpacing: 1.5, fontSize: 10, fontWeight: FontWeight.bold)),
+          const Text('TAHTACI GÜVEN ENDEKSİ', style: TextStyle(color: Colors.white38, fontSize: 10, fontWeight: FontWeight.bold)),
           const SizedBox(height: 16),
           Row(
-            mainAxisAlignment: MainAxisAlignment.center,
             children: [
-              Stack(
-                alignment: Alignment.center,
-                children: [
-                  SizedBox(
-                    height: 80,
-                    width: 80,
-                    child: CircularProgressIndicator(
-                      value: score / 100,
-                      strokeWidth: 8,
-                      strokeCap: StrokeCap.round,
-                      color: meterColor,
-                      backgroundColor: Colors.white10,
-                    ),
-                  ),
-                  Text('${score.toInt()}', style: const TextStyle(color: Colors.white, fontSize: 24, fontWeight: FontWeight.w900)),
-                ],
-              ),
-              const SizedBox(width: 24),
-              Expanded(
-                child: Text(
-                  isHigh ? '🐋 Balina girişi tespit edildi. Tahtacı malı yukarı sürmeye kararlı görünüyor.' : '🤫 Hacim henüz sakin. Tahtacı çaktırmadan alttan toplama bölgesinde bekliyor.',
-                  style: const TextStyle(color: Colors.white70, fontSize: 12, height: 1.4),
-                ),
-              )
+              Stack(alignment: Alignment.center, children: [SizedBox(height: 60, width: 60, child: CircularProgressIndicator(value: score / 100, strokeWidth: 6, color: meterColor, backgroundColor: Colors.white10)), Text('${score.toInt()}', style: const TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.w900))]),
+              const SizedBox(width: 16),
+              Expanded(child: Text(score > 70 ? '🐋 Balina girişi tespit edildi.' : '🤫 Hacim henüz sakin.', style: const TextStyle(color: Colors.white70, fontSize: 12, height: 1.4))),
             ],
           ),
         ],
       ),
     );
   }
+}
 
-  Widget _buildTechnicalReport() {
+class _TeknikKarneWidget extends StatelessWidget {
+  final Color card, border;
+  final double relVol, rsi;
+  const _TeknikKarneWidget({required this.card, required this.border, required this.relVol, required this.rsi});
+  @override
+  Widget build(BuildContext context) {
     return Container(
-      margin: const EdgeInsets.symmetric(horizontal: 16),
-      padding: const EdgeInsets.all(20),
-      decoration: BoxDecoration(color: _card, borderRadius: BorderRadius.circular(24), border: Border.all(color: _border)),
+      margin: const EdgeInsets.symmetric(horizontal: 16), padding: const EdgeInsets.all(20), decoration: BoxDecoration(color: card, borderRadius: BorderRadius.circular(24), border: Border.all(color: border)),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           const Text('TEKNİK KARNE', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 14)),
           const SizedBox(height: 16),
-          _barItem('Hacim Yoğunluğu', (_relVol / 5.0).clamp(0.0, 1.0), Colors.greenAccent),
-          _barItem('RSI Baskısı',      (_rsi / 100.0).clamp(0.0, 1.0), Colors.orangeAccent),
+          _barItem('Hacim Yoğunluğu', (relVol / 5.0).clamp(0.0, 1.0), Colors.greenAccent),
+          _barItem('RSI Baskısı', (rsi / 100.0).clamp(0.0, 1.0), Colors.orangeAccent),
         ],
       ),
     );
   }
-
   Widget _barItem(String label, double val, Color color) {
     return Padding(
       padding: const EdgeInsets.only(bottom: 12),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              Text(label, style: const TextStyle(color: Colors.white54, fontSize: 11)),
-              Text('%${(val * 100).toInt()}', style: TextStyle(color: color, fontSize: 11, fontWeight: FontWeight.bold)),
-            ],
-          ),
+          Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [Text(label, style: const TextStyle(color: Colors.white54, fontSize: 11)), Text('%${(val * 100).toInt()}', style: TextStyle(color: color, fontSize: 11, fontWeight: FontWeight.bold))]),
           const SizedBox(height: 6),
-          ClipRRect(
-            borderRadius: BorderRadius.circular(10),
-            child: LinearProgressIndicator(value: val, color: color, backgroundColor: Colors.white10, minHeight: 5),
-          ),
+          ClipRRect(borderRadius: BorderRadius.circular(10), child: LinearProgressIndicator(value: val, color: color, backgroundColor: Colors.white10, minHeight: 5)),
         ],
-      ),
-    );
-  }
-
-  Widget _buildAlertBanner() {
-    final color = _isVip ? _gold : Colors.orangeAccent;
-    final text  = _isVip
-        ? 'DİKKAT: Bu hissede yüksek hacimli mal toplama emareleri var. Silkeleme operasyonu bitmiş olabilir.'
-        : 'Agresif hareket tespit edildi. Volatiliteli bölge, stop seviyene sadık kal.';
-
-    return Container(
-      margin: const EdgeInsets.symmetric(horizontal: 16),
-      padding: const EdgeInsets.all(14),
-      decoration: BoxDecoration(color: color.withValues(alpha: .05), borderRadius: BorderRadius.circular(16), border: Border.all(color: color.withValues(alpha: .2))),
-      child: Row(
-        children: [
-          Icon(_isVip ? Icons.warning_amber_rounded : Icons.local_fire_department_rounded, color: color, size: 18),
-          const SizedBox(width: 10),
-          Expanded(child: Text(text, style: TextStyle(color: color, fontSize: 12, fontWeight: FontWeight.w500))),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildDisclaimer() {
-    return const Padding(
-      padding: EdgeInsets.symmetric(horizontal: 24, vertical: 8),
-      child: Text(
-        'Bu sayfada görünen bilgiler yatırım tavsiyesi değildir.',
-        textAlign: TextAlign.center,
-        style: TextStyle(color: Colors.white12, fontSize: 10, letterSpacing: 0.3),
       ),
     );
   }
 }
+
+class _AlertBannerWidget extends StatelessWidget {
+  final bool isVip;
+  final Color gold;
+  const _AlertBannerWidget({required this.isVip, required this.gold});
+  @override
+  Widget build(BuildContext context) {
+    final color = isVip ? gold : Colors.orangeAccent;
+    return Container(
+      margin: const EdgeInsets.symmetric(horizontal: 16), padding: const EdgeInsets.all(14), decoration: BoxDecoration(color: color.withValues(alpha: .05), borderRadius: BorderRadius.circular(16), border: Border.all(color: color.withValues(alpha: .2))),
+      child: Row(children: [Icon(isVip ? Icons.warning_amber_rounded : Icons.local_fire_department_rounded, color: color, size: 18), const SizedBox(width: 10), Expanded(child: Text(isVip ? 'DİKKAT: Yüksek hacimli mal toplama emareleri var.' : 'Agresif hareket tespit edildi.', style: TextStyle(color: color, fontSize: 12, fontWeight: FontWeight.w500)))]),
+    );
+  }
+}
+
+

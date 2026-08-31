@@ -1,9 +1,9 @@
 import 'package:flutter/material.dart';
-import 'package:trading_bot_app/screens/bottomNavigate/alarms_screen.dart';
-import 'package:trading_bot_app/screens/bottomNavigate/dashboard_screen.dart';
-import 'package:trading_bot_app/screens/bottomNavigate/profile_screen.dart';
-import 'package:trading_bot_app/screens/bottomNavigate/rehber_screen.dart';
-import 'package:trading_bot_app/screens/bottomNavigate/scanner_screen.dart';
+import 'package:trading_bot_app/screens/alarms/alarms_screen.dart';
+import 'package:trading_bot_app/screens/dashboard/dashboard_screen.dart';
+import 'package:trading_bot_app/screens/profile/profile_screen.dart';
+import 'package:trading_bot_app/screens/rehber/rehber_screen.dart';
+import 'package:trading_bot_app/screens/dashboard/scanner_screen.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 final supabase = Supabase.instance.client;
 

@@ -29,10 +29,10 @@ class favoriYonetici:
                 return {"status": "error", "message": str(err)}
 
             print(f"📡 [FAVORİ EKLEDİ] Kullanıcı: {user_id} -> Hisse: {clean_symbol}")
-            return {"status": "success", "message": f"{clean_symbol} favorilere eklendi aga."}
+            return {"status": "success", "message": f"{clean_symbol} favorilere eklendi."}
         except Exception as e:
             print(f"🚨 Favori ekleme hatası: {e}")
-            return {"status": "error", "message": "Bu hisse zaten favorilerinde var veya sistem hatası amk."}
+            return {"status": "error", "message": "Bu hisse zaten favorilerinde var veya sistem hatası."}
     
     @staticmethod
     def sil(user_id: str, symbol: str):
@@ -45,7 +45,7 @@ class favoriYonetici:
                 .execute()
                 
             print(f"🗑️ [FAVORİ SİLDİ] Kullanıcı: {user_id} -> Hisse: {clean_symbol}")
-            return {"status": "success", "message": f"{clean_symbol} favorilerden kaldırıldı aga."}
+            return {"status": "success", "message": f"{clean_symbol} favorilerden kaldırıldı."}
         except Exception as e:
             return {"status": "error", "message": str(e)}
 
@@ -96,3 +96,41 @@ class alarmYonetici:
         except Exception as e:
             print(f"🚨 Alarm veritabanı hatası: {e}")
             return {"status": "error", "message": "Alarm kurulurken sistem hatası oluştu."}
+
+    @staticmethod
+    def listele(user_id: str):
+        try:
+            response = supabase.table("alarms").select("*").eq("user_id", user_id).execute()
+            return {"status": "success", "alarmlar": response.data}
+        except Exception as e:
+            print(f"🚨 Alarm listeleme hatası: {e}")
+            return {"status": "error", "alarmlar": []}
+
+    @staticmethod
+    def sil(user_id: str, symbol: str):
+        try:
+            response = supabase.table("alarms").delete().eq("user_id", user_id).eq("symbol", symbol).execute()
+
+            print(f"🗑️ [ALARM SİLİNDİ] Kullanıcı: {user_id} -> Hisse: {symbol}")
+            return {"status": "success"}
+        except Exception as e:
+            print(f"🚨 Alarm silme hatası: {e}")
+            return {"status": "error", "message": str(e)}
+
+
+    @staticmethod
+    def duzenle(user_id: str, symbol: str, target_price: float):
+        try:
+            clean_symbol = symbol.strip().upper()
+            response = supabase.table("alarms")\
+                .update({"target_price": target_price})\
+                .eq("user_id", user_id)\
+                .eq("symbol", clean_symbol)\
+                .execute()
+
+            print(f"✏️ [ALARM DÜZENLENDİ] Kullanıcı: {user_id} -> Hisse: {clean_symbol} Yeni Hedef: {target_price}")
+            return {"status": "success"}
+        except Exception as e:
+            print(f"🚨 Alarm düzenleme hatası: {e}")
+            return {"status": "error", "message": str(e)}
+    

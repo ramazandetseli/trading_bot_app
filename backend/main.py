@@ -1,15 +1,20 @@
+import os
 import json
+import requests
+import pandas as pd
 import yfinance as yf
+from pydantic import BaseModel
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-import requests
-import scanner
-import os
-import veriTabani
-from pydantic import BaseModel
-from fastapi.responses import HTMLResponse # Bunu en üste ekle
 
+import scanner
+import veriTabani
+from fonlar import router as fon_router
+from ai_router import router as ai_router
 app = FastAPI()
+
+app.include_router(fon_router, tags=["Fon İşlemleri"])
+app.include_router(ai_router)
 
 app.add_middleware(
     CORSMiddleware,
@@ -25,99 +30,6 @@ def tara_ve_gonder():
         "islem_durumu": "basarili",
         "hisseler": veriler
     }
-
-@app.get("/analiz")
-def ai_analiz(symbol: str, rsi: str, vol: str, price: str, change: str):
-    try:
-        rsi_val = float(str(rsi).replace(",", "."))
-        vol_val = float(str(vol).replace(",", "."))
-        price_val = float(str(price).replace(",", "."))
-        change_val = float(str(change).replace(",", "."))
-    except Exception as parse_err:
-        print(f"🚨 Veri tipi uyuşmazlığı hatası! rsi={rsi}, vol={vol}, price={price}, change={change}")
-        return {"status": "error", "message": "Veri biçimi hatalı aga."}
-
-    if vol_val > 2.5 and abs(change_val) < 1.5:
-        strateji_etiketi = "Kurumsal Akümülasyon (Gizli Mal Toplama)"
-        fon_akisi = "Sessiz ve Güçlü Para Girişi"
-    elif change_val < -2.0 and vol_val > 2.0:
-        strateji_etiketi = "Sert Silkeleme (Ayı Tuzağı - Bear Trap)"
-        fon_akisi = "Panik Satışı / Alttan Tahtacı Karşılaması"
-    elif change_val > 3.0 and vol_val > 2.5:
-        strateji_etiketi = "Kurumsal Ralli Başlangıcı (Balina Hareketi)"
-        fon_akisi = "Agresif ve Hacimli Para Girişi"
-    elif rsi_val > 75:
-        strateji_etiketi = "Köpük Bölgesi (Küçük Yatırımcıya Mal Çakma Riski)"
-        fon_akisi = "Yüksek Riskli Dağıtım Evresi"
-    else:
-        strateji_etiketi = "Yatay Seyir (Sessiz Bekleme Bölgesi)"
-        fon_akisi = "Dengeli Para Akışı"
-
-    risk_skoru = 20.0
-    if rsi_val > 70 or rsi_val < 30: risk_skoru += 30
-    if vol_val > 3.0: risk_skoru += 25
-    if abs(change_val) > 4.0: risk_skoru += 15
-    risk_skoru = min(risk_skoru, 95.0)
-
-    pi_key = os.getenv("GROQ_API_KEY")    
-    url = "https://api.groq.com/openai/v1/chat/completions"
-    
-    headers = {
-        "Authorization": f"Bearer {api_key}",
-        "Content-Type": "application/json"
-    }
-    
-    payload = {
-        "model": "llama-3.3-70b-versatile",
-        "messages": [
-            {
-                "role": "system",
-                "content": f"""Sen profesyonel bir Borsa İstanbul Tahta ve Takas Analistisin. 
-                Sana gelen indikatör ve hacim ayak izlerini yorumlayarak, arkadaki kurumsal fonların (balinaların) psikolojisini analiz etmelisin. 
-                Sıradan teknik analiz cümleleri kurma, doğrudan tahtacının hamlelerine odaklan. Yatırım tavsiyesi verme.
-                Saptanan Mevcut Algoritmik Durum: Strateji={strateji_etiketi}, Risk Skoru=%{risk_skoru}, Fon Akışı={fon_akisi}.
-                
-                Çıktın KESİNLİKLE VE YALNIZCA AŞAĞIDAKİ JSON FORMATINDA ve tamamen TÜRKÇE olmalıdır. Açıklama metni ekleme:
-                {{
-                "ozet": "Hissenin tahta durumunu, balina hareketini özetleyen 1-2 cümlelik kurumsal analiz.",
-                "teknik_durum": "RSI ve hacim kombinasyonuna göre küçük yatırımcı tuzağı var mı, teknik olarak mal nerede durdurulur?",
-                "tahtaci_analizi": "Hesaplanan {strateji_etiketi} ve {fon_akisi} durumuna göre tahtacının anlık psikolojisi ve gizli planı nedir?",
-                "destek": 0.00,
-                "direnc": 0.00,
-                "aksiyon": "BALİNA TAKİBİ / SİLKELEME BÖLGESİ / MAL TOPLAMA / RİSKLİ KÖPÜK"
-                }}"""
-            },
-            {
-                "role": "user", 
-                "content": f"Hisse: {symbol} | Güncel Fiyat: {price_val} TL | Günlük Değişim: %{change_val} | RSI: {rsi_val} | Göreceli Hacim (Vol): {vol_val}"
-            }
-        ],
-        "response_format": {"type": "json_object"}, 
-        "temperature": 0.3
-    }
-    
-    try:
-        response = requests.post(url, json=payload, headers=headers, timeout=10)
-        res_json = response.json()
-        
-        if "choices" in res_json:
-            raw_content = res_json['choices'][0]['message']['content']
-            parsed_data = json.loads(raw_content)
-            
-            parsed_data["strateji_etiketi"] = strateji_etiketi
-            parsed_data["risk_skoru"] = risk_skoru
-            parsed_data["fon_akisi"] = fon_akisi
-
-            return {
-                "status": "success",
-                "data": parsed_data
-            }
-        else:
-            return {"status": "error", "message": "Groq kotaları dolu veya meşgul."}
-            
-    except Exception as e:
-        print(f"Sistem Hatası: {e}")
-        return {"status": "error", "message": str(e)}
 
 
 @app.get("/tara/{mode}")
@@ -182,10 +94,12 @@ def stratejik_tarama(mode: str):
 
 @app.get("/endeksler")
 def get_tv_indices():
-    url = "https://scanner.tradingview.com/turkey/scan"
+    print(" PYTHON: /endeksler endpoint'ine istek geldi! Çalışıyor...") # BURAYA EKLE
+    
+    url = "https://scanner.tradingview.com/global/scan"
     payload = {
         "symbols": {
-            "tickers": ["BIST:XU100", "BIST:XU030", "BIST:XU500"],
+            "tickers": ["BIST:XU100", "BIST:XU030", "BIST:XU500", "FX_IDC:USDTRY", "FX_IDC:EURTRY"],
             "query": {"types": []}
         },
         "columns": ["close", "change"]
@@ -193,93 +107,91 @@ def get_tv_indices():
     
     try:
         response = requests.post(url, json=payload, timeout=10)
+        print(f"PYTHON: TradingView'dan yanıt alındı. Status: {response.status_code}") # BURAYA EKLE
+        
         data = response.json()
         results = []
+        
         for item in data.get('data', []):
-            ticker = item['s'].split(":")[1]
+            sembol = item['s']
             price = item['d'][0]
             change = item['d'][1]
             
-            if ticker == "XU100":
-                endeks_adi = "BIST 100"
-            elif ticker == "XU500":
-                endeks_adi = "BIST 500"
-            else:
-                endeks_adi = "BIST 30"
+            if "XU100" in sembol: endeks_adi = "BIST 100"
+            elif "XU030" in sembol: endeks_adi = "BIST 30"
+            elif "XU500" in sembol: endeks_adi = "BIST 500"
+            elif "USDTRY" in sembol: endeks_adi = "DOLAR / TL"
+            elif "EURTRY" in sembol: endeks_adi = "EURO / TL"
+            else: continue
+            
+            if "TRY" in sembol: formatted_price = f"{price:.2f}"
+            else: formatted_price = f"{price:,.0f}"
             
             results.append({
                 "name": endeks_adi,
-                "price": f"{price:,.0f}",
+                "price": formatted_price,
                 "change": f"{'+' if change > 0 else ''}{change:.2f}"
             })
+            
+        print(f"🔥 PYTHON: Gönderilen veriler: {results}") # BURAYA EKLE
         return {"islem_durumu": "basarili", "veriler": results}
+        
     except Exception as e:
-        print(f"Endeks köprü hatası: {e}")
+        print(f"🚨 PYTHON HATA: {e}") # BURAYA EKLE
         return {"islem_durumu": "hata", "veriler": []}
-
-
-
 
 
 
 @app.get("/hisse-tarihsel/{symbol}")
 def get_hisse_tarihsel(symbol: str, period: str = "1mo"):
     clean_symbol = symbol.strip().upper()
-    # TradingView sembolü direkt gelirse (örn: BIST:THYAO veya THYAO) sonunu temizle (.IS ekle)
     ticker_symbol = clean_symbol.replace("BIST:", "")
     if not ticker_symbol.endswith(".IS"):
         ticker_symbol = f"{ticker_symbol}.IS"
         
-    # 🎯 Periyotlara göre en stabil veri aralığını (interval) seçiyoruz amk
-    interval = "1d"
-    if period == "1d":
-        interval = "5m"   # 1 Günlük grafikte 5 dakikalık mumlar
-    elif period == "5d":
-        interval = "15m"  # 1 Haftalık grafikte 15 dakikalık mumlar
+    interval_map = {
+        "1d": "5m",
+        "5d": "30m",
+        "1mo": "1d",
+        "1y": "1d",
+        "5y": "1wk"
+    }
+    interval = interval_map.get(period, "1d")
 
     try:
         ticker = yf.Ticker(ticker_symbol)
         df = ticker.history(period=period, interval=interval)
         
-        if df.empty:
-            return {"status": "error", "message": f"{clean_symbol} için veri bulunamadı amk."}
+        if df is None or df.empty:
+            return {"status": "error", "message": f"{clean_symbol} için veri bulunamadı.", "data": []}
             
-        # İndeksi sıfırlayıp tarihi sütun yapıyoruz
         df.reset_index(inplace=True)
-        
-        # yfinance bazen 'Date' bazen 'Datetime' döner, onu zırhlıyoruz amk
         time_col = 'Datetime' if 'Datetime' in df.columns else 'Date'
+        df = df.dropna(subset=['Close', time_col])
         
         chart_data = []
         for _, row in df.iterrows():
-            # Eğer fiyat verisi yoksa veya işlem hacmi 0 ise (hafta sonu gibi) o satırı atla
-            if row["Open"] is None or row["Volume"] == 0:
-                continue
-                
-            unix_time = int(row[time_col].timestamp())
+            dt_val = row[time_col]
+            unix_time = int(dt_val.timestamp()) if hasattr(dt_val, "timestamp") else int(pd.to_datetime(dt_val).timestamp())
+
             chart_data.append({
                 "time": unix_time,
-                "open": float(row["Open"]),
-                "high": float(row["High"]),
-                "low": float(row["Low"]),
-                "close": float(row["Close"]),
-                "volume": int(row["Volume"])
+                "open": round(float(row.get("Open", row["Close"])), 2),
+                "close": round(float(row["Close"]), 2),
+                "high": round(float(row.get("High", row["Close"])), 2),
+                "low": round(float(row.get("Low", row["Close"])), 2),
+                "volume": int(row.get("Volume", 0) if not pd.isna(row.get("Volume")) else 0)
             })
             
         return {
             "status": "success",
             "symbol": clean_symbol,
             "period": period,
-            "interval": interval,
             "data": chart_data
         }
         
     except Exception as e:
-        return {"status": "error", "message": str(e)}
-
-
-
-
+        return {"status": "error", "message": str(e), "data": []}
 class FavoriIstek(BaseModel):
     user_id: str
     symbol: str
@@ -315,5 +227,34 @@ def alarm_kur(istek: AlarmIstek):
         symbol=istek.symbol, 
         target_price=istek.target_price,
         current_price=istek.current_price
+    )
+    return sonuc
+
+class AlarmSilIstek(BaseModel):
+    user_id: str
+    symbol: str
+
+@app.get("/alarmlar/{user_id}")
+def alarmlari_listele(user_id: str):
+    sonuc = veriTabani.alarmYonetici.listele(user_id=user_id)
+    return sonuc
+
+@app.post("/alarm-sil")
+def alarm_sil(istek: AlarmSilIstek):
+    sonuc = veriTabani.alarmYonetici.sil(user_id=istek.user_id, symbol=istek.symbol)
+    return sonuc
+
+    
+class AlarmDuzenleIstek(BaseModel):
+    user_id: str
+    symbol: str
+    target_price: float
+
+@app.post("/alarm-duzenle")
+def alarm_duzenle(istek: AlarmDuzenleIstek):
+    sonuc = veriTabani.alarmYonetici.duzenle(
+        user_id=istek.user_id, 
+        symbol=istek.symbol, 
+        target_price=istek.target_price
     )
     return sonuc
