@@ -8,6 +8,7 @@ class HisseListView extends StatelessWidget {
   final List<Hissemodel> displayHisseler;
   final List<dynamic> rawHisseResults;
   final Set<String> favoriHisseler;
+  final String? errorMessage;
   final Future<void> Function() onRefresh;
   final Function(String) onFavoriDegisti;
 
@@ -17,6 +18,7 @@ class HisseListView extends StatelessWidget {
     required this.displayHisseler,
     required this.rawHisseResults,
     required this.favoriHisseler,
+    this.errorMessage,
     required this.onRefresh,
     required this.onFavoriDegisti,
   });
@@ -29,15 +31,41 @@ class HisseListView extends StatelessWidget {
       return Center(child: CircularProgressIndicator(color: colorScheme.primary));
     }
 
-    if (displayHisseler.isEmpty) {
+
+
+    // 1. DURUM: Gerçek bir bağlantı / sunucu hatası varsa -> Tekrar Dene Butonu Çıksın
+    if (errorMessage != null && displayHisseler.isEmpty) {
       return Center(
-        child: Text(
-          'Eşleşen hisse bulunamadı.',
-          style: TextStyle(color: colorScheme.onSurfaceVariant),
+        child: Padding(
+          padding: const EdgeInsets.all(24.0),
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              const Icon(Icons.wifi_off_rounded, size: 54, color: Colors.orangeAccent),
+              const SizedBox(height: 16),
+              Text(
+                errorMessage!,
+                textAlign: TextAlign.center,
+                style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w500),
+              ),
+              const SizedBox(height: 20),
+              ElevatedButton.icon(
+                onPressed: onRefresh,
+                icon: const Icon(Icons.refresh),
+                label: const Text("Tekrar Dene"),
+                style: ElevatedButton.styleFrom(
+                  padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                ),
+              ),
+            ],
+          ),
         ),
       );
     }
 
+
+    
     return RefreshIndicator(
       color: colorScheme.primary,
       backgroundColor: colorScheme.surfaceContainerHigh,

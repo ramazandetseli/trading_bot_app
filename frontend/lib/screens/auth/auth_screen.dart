@@ -13,12 +13,10 @@ class AuthScreen extends StatefulWidget {
 }
 
 class _AuthScreenState extends State<AuthScreen> {
-  
-  bool isLogin=true;
+  bool isLogin = true;
   bool _isObscure = true;
   final _emailController = TextEditingController();
   final _passwordController = TextEditingController();
-
 
   void _showError(String message) {
     if (!mounted) return;
@@ -26,7 +24,7 @@ class _AuthScreenState extends State<AuthScreen> {
       SnackBar(
         content: Text(message),
         backgroundColor: Colors.redAccent,
-        behavior: SnackBarBehavior.floating, // Havada dursun, daha modern
+        behavior: SnackBarBehavior.floating,
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
       ),
     );
@@ -35,7 +33,7 @@ class _AuthScreenState extends State<AuthScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor:const Color(0xFF0A0E17),
+      backgroundColor: const Color(0xFF0A0E17),
       body: Center(
         child: SingleChildScrollView(
           padding: const EdgeInsets.all(24),
@@ -43,12 +41,12 @@ class _AuthScreenState extends State<AuthScreen> {
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
               Container(
-                padding: EdgeInsets.all(20),
+                padding: const EdgeInsets.all(20),
                 decoration: BoxDecoration(
                   color: Colors.blueAccent.withValues(alpha: 0.1),
-                  shape: BoxShape.circle
+                  shape: BoxShape.circle,
                 ),
-                child: Icon(Icons.auto_graph_rounded,color: Colors.blueAccent,size: 80,),
+                child: const Icon(Icons.auto_graph_rounded, color: Colors.blueAccent, size: 80),
               ),
               const SizedBox(height: 30),
               Text(
@@ -63,45 +61,14 @@ class _AuthScreenState extends State<AuthScreen> {
               ),
               const SizedBox(height: 40),
 
-
               _buildTextField("E-posta Adresi", Icons.email_outlined, _emailController, false),
               const SizedBox(height: 16),
 
               _buildTextField("Şifre", Icons.lock_outline, _passwordController, true),
-              const SizedBox(height: 30),
+              const SizedBox(height: 10),
 
-              SizedBox(
-                width: double.infinity,
-                height: 55,
-                child: ElevatedButton(
-                  onPressed: () {
-                    if (isLogin) {
-                      signIn(); 
-                    } else {
-                      signUp(); 
-                    }
-                  },
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: Colors.blueAccent,
-                    shape: RoundedRectangleBorder(borderRadius: BorderRadiusGeometry.circular(16))
-                  ),
-                  child: Text(
-                    isLogin ? "Giriş Yap" : "Kayıt ol" ,
-                    style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: Colors.white),
-                  )
-
-                  ),
-              ),
-              const SizedBox(height: 20),
-
-              TextButton(
-                onPressed:() => setState(() => isLogin = !isLogin),
-                child: Text(
-                  isLogin ? "Hesabın yok mu? Kayıt Ol" : "Zaten hesabın var mı? Giriş Yap",
-                  style: const TextStyle(color: Colors.blueAccent),
-                )),
-                const SizedBox(height: 10),
-                if (!isLogin) // Sadece giriş modundaysa göster
+              // 🔥 DÜZELTME 1: Şifremi unuttum butonu sadece GİRİŞ (isLogin) modunda görünür!
+              if (isLogin)
                 Align(
                   alignment: Alignment.centerRight,
                   child: TextButton(
@@ -110,13 +77,43 @@ class _AuthScreenState extends State<AuthScreen> {
                   ),
                 ),
 
+              const SizedBox(height: 20),
 
-                const SizedBox(height: 15,),
-                Text(
-                  "Bu uygulama Supabase tarafından desteklenmektedir.",
-                  style: TextStyle(color: Colors.white.withValues(alpha: .5), fontSize: 12),
-                )
+              SizedBox(
+                width: double.infinity,
+                height: 55,
+                child: ElevatedButton(
+                  onPressed: () {
+                    if (isLogin) {
+                      signIn();
+                    } else {
+                      signUp();
+                    }
+                  },
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: Colors.blueAccent,
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+                  ),
+                  child: Text(
+                    isLogin ? "Giriş Yap" : "Kayıt Ol",
+                    style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: Colors.white),
+                  ),
+                ),
+              ),
+              const SizedBox(height: 20),
 
+              TextButton(
+                onPressed: () => setState(() => isLogin = !isLogin),
+                child: Text(
+                  isLogin ? "Hesabın yok mu? Kayıt Ol" : "Zaten hesabın var mı? Giriş Yap",
+                  style: const TextStyle(color: Colors.blueAccent),
+                ),
+              ),
+              const SizedBox(height: 15),
+              Text(
+                "Bu uygulama Supabase tarafından desteklenmektedir.",
+                style: TextStyle(color: Colors.white.withValues(alpha: .5), fontSize: 12),
+              )
             ],
           ),
         ),
@@ -124,27 +121,28 @@ class _AuthScreenState extends State<AuthScreen> {
     );
   }
 
-Widget _buildTextField(String label, IconData icon, TextEditingController controller, bool isPassword) {
+  Widget _buildTextField(String label, IconData icon, TextEditingController controller, bool isPassword) {
     return TextField(
-    
       controller: controller,
-      obscureText: isPassword ? _isObscure : false,      
+      obscureText: isPassword ? _isObscure : false,
       style: const TextStyle(color: Colors.white),
       decoration: InputDecoration(
         labelText: label,
         labelStyle: TextStyle(color: Colors.white.withValues(alpha: 0.5)),
         prefixIcon: Icon(icon, color: Colors.blueAccent),
         suffixIcon: isPassword
-        ? IconButton(
-           icon: Icon(
-          _isObscure ? Icons.visibility_off : Icons.visibility,
-          color: Colors.white.withValues(alpha: 0.5),
-          )
-          ,onPressed:() {
-          setState(() {
-            _isObscure=!_isObscure;
-          });
-        }) : null,
+            ? IconButton(
+                icon: Icon(
+                  _isObscure ? Icons.visibility_off : Icons.visibility,
+                  color: Colors.white.withValues(alpha: 0.5),
+                ),
+                onPressed: () {
+                  setState(() {
+                    _isObscure = !_isObscure;
+                  });
+                },
+              )
+            : null,
         filled: true,
         fillColor: const Color(0xFF131B2B),
         border: OutlineInputBorder(
@@ -159,133 +157,114 @@ Widget _buildTextField(String label, IconData icon, TextEditingController contro
     );
   }
 
-
-Future<void> signUp() async {
-  try {
-    await supabase.auth.signUp(
-      email: _emailController.text.trim(),
-      password: _passwordController.text.trim(),
-    );
-    if (mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text("Kayıt başarılı! E-postanı kontrol et veya giriş yap.")),
+  // 🔥 DÜZELTME 2: Doğrudan supabase yerine AuthService kullanıyoruz
+  Future<void> signUp() async {
+    try {
+      await AuthService().signUp(
+        email: _emailController.text.trim(),
+        password: _passwordController.text.trim(),
       );
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text("Kayıt başarılı! E-postanı kontrol et veya giriş yap.")),
+        );
+      }
+    } on AuthException catch (e) {
+      if (e.message.contains("already registered")) {
+        _showError("Bu e-posta zaten kayıtlı, giriş yapmayı dene.");
+      } else if (e.message.contains("Password should be")) {
+        _showError("Şifre çok kısa! En az 6 karakter lazım.");
+      } else if (e.message.contains("Invalid email")) {
+        _showError("Geçersiz mail adresi.");
+      } else {
+        _showError("Kayıt hatası: ${e.message}");
+      }
+    } catch (e) {
+      _showError("Sistemde bir arıza var.");
     }
-  } on AuthException catch (e) {
-    if (e.message.contains("already registered")) {
-      _showError("Bu e-posta zaten kayıtlı, giriş yapmayı dene.");
-    } else if (e.message.contains("Password should be")) {
-      _showError("Şifre çok kısa! En az 6 karakter lazım.");
-    } else if (e.message.contains("Invalid email")) {
-      _showError("Geçersiz mail adresi.");
-    } else {
-      _showError("Kayıt hatası: ${e.message}");
-    }
-  } catch (e) {
-    _showError("Sistemde bir arıza var, destek için ramdet42@gmail.com ile iletişime geçebilirsiniz.");
-  }
-}
-
-
-Future<void> signIn() async {
-  
-  if (_emailController.text.isEmpty || _passwordController.text.isEmpty) {
-    _showError("email veya şifre alanı boş.");
-    return;
   }
 
-  try {
-    final response = await supabase.auth.signInWithPassword(
-      email: _emailController.text.trim(),
-      password: _passwordController.text.trim(),
-    );
-    
-    if (response.user != null && mounted) {
-      UserState().fetchPremiumStatus();
-      Navigator.pushReplacement(
-        context,
-        MaterialPageRoute(builder: (context) => const TradingBotApp()),
-      );
-    }
-  } on AuthException catch (e) {
-    // Giriş hataları
-    if (e.message.contains("Invalid login credentials")) {
-      _showError("E-posta veya şifre patladı. Kontrol et.");
-    } else if (e.message.contains("Email not confirmed")) {
-      _showError("E-posta kutundan maili onayla ve tekrar dene.");
-    } else {
-      _showError("Giriş yapılamadı: ${e.message}");
-    }
-  } catch (e) {
-    _showError("Bağlantıda sıkıntı var,destek için ramdet42@gmail.com ile iletişime geçebilirsiniz.");
-  }
-}
-
-
-void _showForgotPasswordDialog(){
-  final emailController = TextEditingController();
-
-
-  showDialog(
-    context: context, 
-    builder: (context) => AlertDialog(
-      title: const Text("Şifre Sıfırlama"),
-      content: TextField(
-        controller: emailController,
-        decoration: const InputDecoration(
-          labelText: "Kayıtlı E-posta Adresin",
-          prefixIcon: Icon(Icons.email_outlined),
-        ),
-      ),
-      actions: [
-          TextButton(onPressed: () => Navigator.pop(context), child: const Text("İptal")),
-         ElevatedButton(
-  onPressed: () async {
-    final email = emailController.text.trim();
-    
-    if (email.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Lütfen e-posta adresinizi girin.")));
+  // 🔥 DÜZELTME 3: Giriş yaparken OneSignal'a da kullanıcıyı bağlıyoruz
+  Future<void> signIn() async {
+    if (_emailController.text.isEmpty || _passwordController.text.isEmpty) {
+      _showError("E-posta veya şifre alanı boş.");
       return;
     }
 
     try {
-      // 2. Kodu gönder (AuthService içindeki fonksiyonun)
-      await AuthService().resetPassword(email);
+      await AuthService().signIn(
+        email: _emailController.text.trim(),
+        password: _passwordController.text.trim(),
+      );
 
       if (mounted) {
-        // 3. Bilgilendirme yap
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text("6 haneli doğrulama kodu e-postanıza gönderildi."))
-        );
-
-        Navigator.push(
+        UserState().fetchPremiumStatus();
+        Navigator.pushReplacement(
           context,
-          MaterialPageRoute(
-            builder: (context) =>  ResetPasswordScreen(email: email), // OTP doğrulama ve şifre sıfırlama ekranı
-          ),
+          MaterialPageRoute(builder: (context) => const TradingBotApp()),
         );
+      }
+    } on AuthException catch (e) {
+      if (e.message.contains("Invalid login credentials")) {
+        _showError("E-posta veya şifre yanlış. Kontrol et.");
+      } else if (e.message.contains("Email not confirmed")) {
+        _showError("E-posta kutundan maili onayla ve tekrar dene.");
+      } else {
+        _showError("Giriş yapılamadı: ${e.message}");
       }
     } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text("Hata: $e"), backgroundColor: Colors.red),
-        );
-      }
+      _showError("Bağlantıda sıkıntı var.");
     }
-  },
-  child: const Text("Kodu gönder"),
-)
-          
-          
-      ]
-    )
-  );
+  }
 
+  void _showForgotPasswordDialog() {
+    final emailController = TextEditingController();
 
-}
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text("Şifre Sıfırlama"),
+        content: TextField(
+          controller: emailController,
+          decoration: const InputDecoration(
+            labelText: "Kayıtlı E-posta Adresin",
+            prefixIcon: Icon(Icons.email_outlined),
+          ),
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(context), child: const Text("İptal")),
+          ElevatedButton(
+            onPressed: () async {
+              final email = emailController.text.trim();
 
+              if (email.isEmpty) {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(content: Text("Lütfen e-posta adresinizi girin.")),
+                );
+                return;
+              }
 
+              try {
+                await AuthService().resetPassword(email);
 
-
-
+                if (mounted) {
+                  Navigator.pop(context);
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(content: Text("Şifre sıfırlama talimatı e-postanıza gönderildi.")),
+                  );
+                }
+              } catch (e) {
+                if (mounted) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(content: Text("Hata: $e"), backgroundColor: Colors.red),
+                  );
+                }
+              }
+            },
+            child: const Text("Kodu Gönder"),
+          )
+        ],
+      ),
+    );
+  }
 }

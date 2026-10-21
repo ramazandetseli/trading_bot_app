@@ -1,229 +1,356 @@
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
-import 'package:trading_bot_app/services/premium_service.dart';
+import 'package:trading_bot_app/constants/app_constants.dart';
 import 'package:trading_bot_app/main.dart';
 import 'package:trading_bot_app/screens/auth/auth_screen.dart';
 import 'package:trading_bot_app/screens/profile/settings/changepassword.dart';
 import 'package:trading_bot_app/screens/profile/settings/notification_screen.dart';
+import 'package:trading_bot_app/screens/profile/settings/premium_screen.dart';
 
-class ProfileScreen extends StatefulWidget {
-  const ProfileScreen({super.key});
+class SettingsScreen extends StatelessWidget {
+  const SettingsScreen({super.key});
 
-  @override
-  State<ProfileScreen> createState() => _ProfileScreenState();
-}
-
-class _ProfileScreenState extends State<ProfileScreen> {
-  final supabase = Supabase.instance.client;
-  String userMail = "";
-  bool isLoading = true; // Sayfa ilk açılış yüklemesi için kontrol
-
-  // 🎯 Renkleri ve Temayı Premium Durumuna Göre Dinamik Yapıyoruz Aga
-  Color get accentColor => UserState().isPremium ? Colors.amber : Colors.blueAccent;
-  Color get avatarBg => UserState().isPremium ? Colors.amber.withValues(alpha: 0.1) : Colors.blueAccent.withValues(alpha: 0.1);
-
-  @override
-  void initState() {
-    super.initState();
-    _loadUserData();
-  }
-
-  Future<void> _loadUserData() async {
-    final user = supabase.auth.currentUser;
-    if (user != null) {
-      setState(() {
-        userMail = user.email ?? "";
-      });
-
-      // 🎯 Global UserState'i Supabase'den güncelliyoruz
-      await UserState().fetchPremiumStatus();
+  Future<void> _cikisYap(BuildContext context) async {
+    await Supabase.instance.client.auth.signOut();
+    if (context.mounted) {
+      // Çıkış yaptıktan sonra login veya splash ekranına yönlendirme
+      Navigator.of(context).pushNamedAndRemoveUntil('/', (route) => false);
     }
-    setState(() {
-      isLoading = false;
-    });
-  }
-
-  // 🎯 Test Amaçlı Anlık Supabase Premium Aktifleştirici (Simülasyon)
-  Future<void> _makeUserPremiumSimulated() async {
-    final user = supabase.auth.currentUser;
-    if (user == null) return;
-
-    setState(() {
-      isLoading = true; 
-    });
-
-    try {
-      // 1. Supabase'deki profiles tablosunda premium_status'u true yapıyoruz
-      await supabase
-          .from('profiles')
-          .update({'premium_status': true})
-          .eq('id', user.id);
-
-      // 2. Bizim global UserState'i de lokal olarak güncelliyoruz ki tüm sayfalar anlasın
-      UserState().isPremium = true;
-
-      if (!mounted) return;
-
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          backgroundColor: Colors.green,
-          content: Text("🚀 Ödeme Başarılı! PRO Üyeliğiniz Aktif Edildi.", style: TextStyle(fontWeight: FontWeight.bold)),
-        ),
-      );
-    } catch (e) {
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text("Simülasyon Hatası: $e")),
-      );
-    }
-
-    setState(() {
-      isLoading = false; 
-    });
   }
 
   @override
   Widget build(BuildContext context) {
-    final textColor = Theme.of(context).textTheme.bodyLarge?.color ?? Colors.white;
-
-    if (isLoading) {
-      return const Scaffold(
-        backgroundColor: Color(0xFF070B14),
-        body: Center(child: CircularProgressIndicator(color: Colors.amber)),
-      );
-    }
+    final colorScheme = Theme.of(context).colorScheme;
+    final textTheme = Theme.of(context).textTheme;
+    
+    // Supabase'den gerçek kullanıcı verilerini alıyoruz
+    final user = Supabase.instance.client.auth.currentUser;
+    final userEmail = user?.email ?? "Giriş yapılmadı";
+    // Eğer veritabanında isim yoksa varsayılan olarak ismini gösteriyoruz
+    final userName = user?.userMetadata?['name'] ?? "Kullanıcı"; 
+    final initials = userName.isNotEmpty ? userName.substring(0, 1).toUpperCase() : "U";
 
     return Scaffold(
+      backgroundColor: colorScheme.surface,
       appBar: AppBar(
-        title: const Text("Kullanıcı Profili", style: TextStyle(fontWeight: FontWeight.bold)),
+        title: Text(
+          "Profilim", 
+          style: textTheme.titleLarge?.copyWith(fontWeight: FontWeight.bold, color: colorScheme.onSurface)
+        ),
         backgroundColor: Colors.transparent,
         elevation: 0,
-        iconTheme: IconThemeData(color: textColor),
+        centerTitle: true,
       ),
-      body: Padding(
-        padding: const EdgeInsets.all(20),
-        child: Column(
-          children: [
-            Center(
-              child: Stack(
-                children: [
-                  CircleAvatar(
-                    radius: 50,
-                    backgroundColor: avatarBg,
-                    child: Icon(Icons.person, size: 50, color: accentColor),
-                  ),
-                  if (UserState().isPremium) // Premiumsa köşede şık bir taç belirsin
-                    const Positioned(
-                      top: 0,
-                      right: 0,
-                      child: CircleAvatar(
-                        radius: 16,
-                        backgroundColor: Colors.amber,
-                        child: Icon(Icons.workspace_premium, size: 16, color: Colors.black),
-                      ),
-                    )
-                  else // Standart üyeyse normal kalem düzenleme ikonu
-                    Positioned(
-                      bottom: 0,
-                      right: 0,
-                      child: CircleAvatar(
-                        radius: 15,
-                        backgroundColor: accentColor,
-                        child: const Icon(Icons.edit, size: 15, color: Colors.white),
-                      ),
-                    )
+      body: ListView(
+        physics: const AlwaysScrollableScrollPhysics(),
+        padding: const EdgeInsets.fromLTRB(16, 8, 16, 32),
+        children: [
+          // 1. PROFİL KARTI
+          Container(
+            padding: const EdgeInsets.all(20),
+            decoration: BoxDecoration(
+              gradient: LinearGradient(
+                colors: [
+                  colorScheme.primary,
+                  colorScheme.tertiary,
                 ],
+                begin: Alignment.topLeft,
+                end: Alignment.bottomRight,
               ),
-            ),
-
-            const SizedBox(height: 20),
-            Text(userMail, style: const TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.bold)),
-            const SizedBox(height: 10),
-            
-            // 🎯 Dinamik Premium Statü Alanı ve Butonu (Yan yana derli toplu düzen)
-            Row(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                Icon(
-                  UserState().isPremium ? Icons.verified : Icons.account_circle,
-                  color: UserState().isPremium ? Colors.amber : Colors.grey,
-                  size: 20,
+              borderRadius: BorderRadius.circular(24),
+              boxShadow: [
+                BoxShadow(
+                  color: colorScheme.primary.withValues(alpha: 0.3),
+                  blurRadius: 12,
+                  offset: const Offset(0, 4),
                 ),
-                const SizedBox(width: 8),
-                Text(
-                  UserState().isPremium ? "Premium Üye" : "Standart Üye",
-                  style: TextStyle(color: UserState().isPremium ? Colors.amber : Colors.grey, fontSize: 17, fontWeight: FontWeight.bold),
-                ),
-                const SizedBox(width: 20),
-                ElevatedButton(
-                  onPressed: () {
-                    if (!UserState().isPremium) {
-                      _makeUserPremiumSimulated(); // Basınca şak diye premium yapacak simülasyon
-                    }
-                  },
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: UserState().isPremium ? Colors.amber.withValues(alpha: .2) : Colors.amber,
-                    foregroundColor: UserState().isPremium ? Colors.amber : Colors.black,
-                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                    elevation: UserState().isPremium ? 0 : 2,
-                    side: UserState().isPremium ? const BorderSide(color: Colors.amber) : null,
-                  ),
-                  child: UserState().isPremium 
-                      ? const Text("Üyelik Aktif", style: TextStyle(fontWeight: FontWeight.bold))
-                      : const Text("Aylık 19 ₺ Ol", style: TextStyle(fontWeight: FontWeight.bold)),
-                )
               ],
             ),
+            child: Row(
+              children: [
+                CircleAvatar(
+                  radius: 32,
+                  backgroundColor: colorScheme.onPrimary,
+                  child: Text(
+                    initials,
+                    style: TextStyle(
+                      fontSize: 24,
+                      fontWeight: FontWeight.bold,
+                      color: colorScheme.primary,
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 16),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        userName,
+                        style: TextStyle(
+                          fontSize: 18,
+                          fontWeight: FontWeight.bold,
+                          color: colorScheme.onPrimary,
+                        ),
+                      ),
+                      const SizedBox(height: 4),
+                      Text(
+                        userEmail,
+                        style: TextStyle(
+                          fontSize: 13,
+                          color: colorScheme.onPrimary.withValues(alpha: 0.8),
+                        ),
+                      ),
+                      const SizedBox(height: 8),
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                        decoration: BoxDecoration(
+                          color: colorScheme.onPrimary.withValues(alpha: 0.2),
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                        child: Text(
+                          "VIP Üye",
+                          style: TextStyle(
+                            fontSize: 11,
+                            fontWeight: FontWeight.bold,
+                            color: colorScheme.onPrimary,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 28),
 
-            const SizedBox(height: 20),
+          // 2. TERCİHLER
+          _sectionTitle(context, "Uygulama Tercihleri"),
+          _card(context, [
+            _settingRow(
+              context,
+              icon: Icons.dark_mode_rounded,
+              iconColor: Colors.indigoAccent,
+              title: "Koyu Tema",
+              trailing: Switch(
+                value: Theme.of(context).brightness == Brightness.dark,
+                activeColor: colorScheme.primary,
+                onChanged: (_) => ThemeManager.toggleTheme(),
+              ),
+            ),
+            Divider(height: 1, indent: 64, color: colorScheme.outlineVariant.withValues(alpha: 0.4)),
+            _settingRow(
+              context,
+              icon: Icons.notifications_active_rounded,
+              iconColor: Colors.amber.shade600,
+              title: "Bildirim Ayarları",
+              trailing: Icon(Icons.chevron_right_rounded, color: colorScheme.onSurfaceVariant),
+              onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const NotificationSettingsScreen())),
+            ),
+          ]),
+          const SizedBox(height: 24),
 
-            _profilMenuItem(Icons.palette, "Tema Ayarları", Theme.of(context).brightness == Brightness.dark ? "Karanlık mod açık" : "Aydınlık mod açık"),
-            _profilMenuItem(Icons.notifications, "Bildirimler", "Sinyal bildirimleri açık"),
-            _profilMenuItem(Icons.security, "Güvenlik", "Şifre değiştir"),
-             
-            const Spacer(),
-
-            SizedBox(
-              width: double.infinity,
-              height: 55,
-              child: ElevatedButton.icon(
-                onPressed: () async {
-                  await supabase.auth.signOut();
-                  UserState().isPremium = false; // Çıkışta temizlik
-                  if (!mounted) return;
-                  Navigator.pushReplacement(context, MaterialPageRoute(builder: (context) => const AuthScreen()));
-                },
-                icon: const Icon(Icons.logout, color: Colors.white),
-                label: const Text("Çıkış yap", style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: Colors.redAccent.withOpacity(0.8),
-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+          // 3. SİSTEM & BAĞLANTI (Geliştirici veya Sistem Durumu)
+          _sectionTitle(context, "Sistem Durumu"),
+          _card(context, [
+            _settingRow(
+              context,
+              icon: AppConstants.isDevelopment ? Icons.dns_rounded : Icons.cloud_done_rounded,
+              iconColor: AppConstants.isDevelopment ? Colors.orange : Colors.green,
+              title: "Veri Sunucusu",
+              subtitle: AppConstants.isDevelopment ? "Yerel Geliştirme (Local)" : "Canlı (Production)",
+              trailing: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                decoration: BoxDecoration(
+                  color: (AppConstants.isDevelopment ? Colors.orange : Colors.green).withValues(alpha: 0.1),
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Container(
+                      width: 8,
+                      height: 8,
+                      decoration: BoxDecoration(
+                        shape: BoxShape.circle,
+                        color: AppConstants.isDevelopment ? Colors.orange : Colors.green,
+                      ),
+                    ),
+                    const SizedBox(width: 6),
+                    Text(
+                      "Aktif",
+                      style: TextStyle(
+                        fontSize: 12,
+                        fontWeight: FontWeight.bold,
+                        color: AppConstants.isDevelopment ? Colors.orange : Colors.green,
+                      ),
+                    ),
+                  ],
                 ),
               ),
             ),
-            const SizedBox(height: 20,)
-          ],
+          ]),
+          const SizedBox(height: 24),
+
+          // 4. HESAP İŞLEMLERİ
+          _sectionTitle(context, "Hesap İşlemleri"),
+          _card(context, [
+             _settingRow(
+              context,
+              icon: Icons.workspace_premium_outlined,
+              iconColor: Colors.amber,
+              title: "Premium Üyelik İşlemleri",
+              trailing: Icon(Icons.chevron_right_rounded, color: colorScheme.onSurfaceVariant),
+              onTap: () {
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(builder: (_) => const PremiumScreen()),
+                );
+              },
+            ),
+            _settingRow(
+              context,
+              icon: Icons.shield_rounded,
+              iconColor: Colors.teal,
+              title: "Şifre Değiştir",
+              trailing: Icon(Icons.chevron_right_rounded, color: colorScheme.onSurfaceVariant),
+              onTap: () {
+                // Şifre değiştirme ekranına yönlendirme
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(builder: (_) => const Changepassword()),
+                );
+              },
+            ),
+            Divider(height: 1, indent: 64, color: colorScheme.outlineVariant.withValues(alpha: 0.4)),
+            _settingRow(
+              context,
+              icon: Icons.logout_rounded,
+              iconColor: colorScheme.error,
+              title: "Çıkış Yap",
+              isDestructive: true,
+              onTap:() {
+                _cikisYap(context);
+                Navigator.push(context, 
+                MaterialPageRoute(builder: (_) => const AuthScreen()));
+              },
+            ),
+          ]),
+          
+          const SizedBox(height: 32),
+          // ALT BİLGİ
+          Center(
+            child: Column(
+              children: [
+                Text(
+                  "Finansal Terminal v1.0.0",
+                  style: TextStyle(color: colorScheme.outline, fontSize: 12, fontWeight: FontWeight.bold),
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  "© 2026 Tüm Hakları Saklıdır",
+                  style: TextStyle(color: colorScheme.outline, fontSize: 11),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _sectionTitle(BuildContext context, String title) {
+    final colorScheme = Theme.of(context).colorScheme;
+    return Padding(
+      padding: const EdgeInsets.only(left: 16, bottom: 10),
+      child: Text(
+        title.toUpperCase(),
+        style: TextStyle(
+          color: colorScheme.primary, 
+          fontSize: 12, 
+          fontWeight: FontWeight.w800, 
+          letterSpacing: 1.2,
         ),
       ),
     );
   }
 
-  Widget _profilMenuItem(IconData icon, String title, String subtitle){
-    final textColor = Theme.of(context).textTheme.bodyLarge?.color ?? Colors.white;
-    return ListTile(
-      leading: Icon(icon, color: accentColor), // 🎯 Sol ikonların renkleri de premium durumuna göre değişiyor!
-      title: Text(title, style: TextStyle(color: textColor, fontWeight: FontWeight.w500)),
-      subtitle: Text(subtitle, style: TextStyle(color: textColor.withOpacity(0.5), fontSize: 12)),
-      trailing: const Icon(Icons.chevron_right, color: Colors.grey),
-      onTap: () {
-        if(title == "Tema Ayarları"){
-          ThemeManager.toggleTheme(); 
-        } else if(title == "Bildirimler"){
-          Navigator.push(context, MaterialPageRoute(builder: (context) => const NotificationSettingsScreen()));
-        } else if(title == "Güvenlik"){
-          Navigator.push(context, MaterialPageRoute(builder: (context) => const Changepassword()));
-        }
-      },
+  Widget _card(BuildContext context, List<Widget> children) {
+    final colorScheme = Theme.of(context).colorScheme;
+    return Container(
+      decoration: BoxDecoration(
+        color: colorScheme.surfaceContainer,
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(color: colorScheme.outlineVariant.withValues(alpha: 0.4)),
+      ),
+      clipBehavior: Clip.antiAlias,
+      child: Column(children: children),
+    );
+  }
+
+  Widget _settingRow(
+    BuildContext context, {
+    required IconData icon,
+    required Color iconColor,
+    required String title,
+    String? subtitle,
+    Widget? trailing,
+    bool isDestructive = false,
+    VoidCallback? onTap,
+  }) {
+    final colorScheme = Theme.of(context).colorScheme;
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: onTap,
+        highlightColor: isDestructive ? colorScheme.error.withValues(alpha: 0.1) : null,
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
+          child: Row(
+            children: [
+              Container(
+                width: 40,
+                height: 40,
+                decoration: BoxDecoration(
+                  color: isDestructive 
+                      ? colorScheme.error.withValues(alpha: 0.1) 
+                      : iconColor.withValues(alpha: 0.12), 
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: Icon(icon, color: isDestructive ? colorScheme.error : iconColor, size: 20),
+              ),
+              const SizedBox(width: 16),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text(
+                      title, 
+                      style: TextStyle(
+                        color: isDestructive ? colorScheme.error : colorScheme.onSurface, 
+                        fontWeight: FontWeight.bold, 
+                        fontSize: 15,
+                      ),
+                    ),
+                    if (subtitle != null) ...[
+                      const SizedBox(height: 2),
+                      Text(
+                        subtitle, 
+                        style: TextStyle(color: colorScheme.onSurfaceVariant, fontSize: 12), 
+                        maxLines: 1, 
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ],
+                  ],
+                ),
+              ),
+              if (trailing != null) ...[const SizedBox(width: 12), trailing],
+            ],
+          ),
+        ),
+      ),
     );
   }
 }

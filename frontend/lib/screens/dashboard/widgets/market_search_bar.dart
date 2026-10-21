@@ -44,7 +44,7 @@ class MarketSearchBar extends StatelessWidget {
                   color: colorScheme.onSurfaceVariant,
                   size: 20,
                 ),
-                hintText: 'Hisse ara...',
+                hintText: 'Arama yap...',
                 hintStyle: TextStyle(
                   color: colorScheme.onSurfaceVariant.withValues(alpha: .7),
                 ),

@@ -1,5 +1,5 @@
 import 'package:flutter/material.dart';
-import 'package:cached_network_image/cached_network_image.dart'; // Paket import edildi
+import 'package:cached_network_image/cached_network_image.dart';
 import 'package:trading_bot_app/models/rehber_models.dart';
 
 class RehberDetailScreen extends StatelessWidget {
@@ -9,109 +9,223 @@ class RehberDetailScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final colorScheme = Theme.of(context).colorScheme;
+    final textTheme = Theme.of(context).textTheme;
+
     return Scaffold(
-      appBar: AppBar(
-        title: Text(ders.baslik, style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
-        centerTitle: true,
-        elevation: 0,
-      ),
-      body: SingleChildScrollView(
+      backgroundColor: colorScheme.surface,
+      // CustomScrollView ile sayfayı aşağı kaydırdıkça üstteki resmin küçülüp AppBar'a dönüştüğü o premium efekti veriyoruz.
+      body: CustomScrollView(
         physics: const BouncingScrollPhysics(),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            // 1. ÜST KAPAK RESMİ (AI Görseli)
-            AspectRatio(
-              aspectRatio: 16 / 9,
-              child: CachedNetworkImage(
-                imageUrl: ders.resimUrl,
-                width: double.infinity,
-                fit: BoxFit.cover,
-                placeholder: (context, url) => const Center(
-                  child: CircularProgressIndicator(color: Colors.greenAccent),
-                ),
-                errorWidget: (context, url, error) => const Center(
-                  child: Icon(Icons.broken_image, size: 50, color: Colors.grey),
-                ),
+        slivers: [
+          // HAVALI ÜST KAPAK (SliverAppBar)
+          SliverAppBar(
+            expandedHeight: 260.0,
+            pinned: true,
+            stretch: true,
+            backgroundColor: colorScheme.surface,
+            elevation: 0,
+            iconTheme: IconThemeData(color: Colors.white), // Geri butonu beyaz
+            flexibleSpace: FlexibleSpaceBar(
+              stretchModes: const [StretchMode.zoomBackground],
+              background: Stack(
+                fit: StackFit.expand,
+                children: [
+                  CachedNetworkImage(
+                    imageUrl: ders.resimUrl,
+                    fit: BoxFit.cover,
+                    // 🔥 İŞTE GECİKMEYİ ÇÖZEN SİHİR: Linkin sonundaki token'ları yoksay!
+                    cacheKey: ders.resimUrl.split('?').first,
+                    placeholder: (context, url) => Container(
+                      color: colorScheme.surfaceContainerHigh,
+                      child: const Center(child: CircularProgressIndicator()),
+                    ),
+                    errorWidget: (context, url, error) => Container(
+                      color: colorScheme.surfaceContainerHigh,
+                      child: const Icon(Icons.broken_image_rounded, size: 50),
+                    ),
+                  ),
+                  // Resmin üzerine hafif siyah degrade atıyoruz ki geri butonu her resimde okunsun
+                  DecoratedBox(
+                    decoration: BoxDecoration(
+                      gradient: LinearGradient(
+                        begin: Alignment.topCenter,
+                        end: Alignment.bottomCenter,
+                        colors: [
+                          Colors.black.withValues(alpha: 0.6),
+                          Colors.transparent,
+                          colorScheme.surface.withValues(alpha: 0.8),
+                          colorScheme.surface,
+                        ],
+                        stops: const [0.0, 0.3, 0.9, 1.0],
+                      ),
+                    ),
+                  ),
+                ],
               ),
             ),
+          ),
 
-            Padding(
-              padding: const EdgeInsets.all(16.0),
+          // SAYFA İÇERİĞİ
+          SliverToBoxAdapter(
+            child: Padding(
+              padding: const EdgeInsets.fromLTRB(20, 8, 20, 40),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  // Kategori Etiketi (Badge)
+                  // Kategori Etiketi
                   Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
                     decoration: BoxDecoration(
-                      color: Colors.greenAccent.withValues(alpha: .15),
-                      borderRadius: BorderRadius.circular(6),
+                      color: colorScheme.primary.withValues(alpha: 0.15),
+                      borderRadius: BorderRadius.circular(8),
                     ),
                     child: Text(
-                      ders.kategori,
-                      style: const TextStyle(color: Colors.green, fontWeight: FontWeight.bold, fontSize: 12),
+                      ders.kategori.toUpperCase(),
+                      style: TextStyle(
+                        color: colorScheme.primary, 
+                        fontWeight: FontWeight.w800, 
+                        fontSize: 11,
+                        letterSpacing: 1.0,
+                      ),
                     ),
                   ),
-                  const SizedBox(height: 12),
+                  const SizedBox(height: 16),
                   
                   // Başlık
                   Text(
                     ders.baslik,
-                    style: const TextStyle(fontSize: 24, fontWeight: FontWeight.bold),
+                    style: textTheme.headlineSmall?.copyWith(
+                      fontWeight: FontWeight.bold,
+                      color: colorScheme.onSurface,
+                      height: 1.2,
+                    ),
                   ),
-                  const Divider(height: 30, thickness: 1),
-
-                  // Detaylar Alt Başlığı
-                  const Text(
-                    "Analiz ve Eğitim Detayları",
-                    style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: Colors.redAccent),
-                  ),
-                  const SizedBox(height: 10),
+                  const SizedBox(height: 24),
+                  Divider(color: colorScheme.outlineVariant.withValues(alpha: 0.5)),
+                  const SizedBox(height: 24),
 
                   // Detay Metni
                   Text(
                     ders.detayMetni,
-                    style: const TextStyle(fontSize: 15, height: 1.6, fontWeight: FontWeight.w500),
-                  ),
-                  
-                  ...[
-                  const Divider(height: 40, thickness: 1),
-                  const Text(
-                    "Teknik Gösterim / Örnek Senaryo",
-                    style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: Colors.blueAccent),
-                  ),
-                  const SizedBox(height: 12),
-                  
-                  Container(
-                    width: double.infinity,
-                    decoration: BoxDecoration(
-                      borderRadius: BorderRadius.circular(12),
-                      border: Border.all(color: Colors.grey.shade300),
+                    style: TextStyle(
+                      fontSize: 16, 
+                      height: 1.6, 
+                      color: colorScheme.onSurfaceVariant,
+                      fontWeight: FontWeight.w400,
                     ),
-                    child: ClipRRect(
-                      borderRadius: BorderRadius.circular(11),
-                      child: GestureDetector(
-                        onTap: () {
-                          _tamEkranResimGoster(context, ders.graphicUrl);
-                        },
-                        child: CachedNetworkImage(
-                          imageUrl: ders.graphicUrl,
-                          fit: BoxFit.contain, // Grafiklerin kırpılmaması için contain kalmalı
-                          placeholder: (context, url) => const SizedBox(
-                            height: 200,
-                            child: Center(child: CircularProgressIndicator()),
-                          ),
-                          errorWidget: (context, url, error) => const SizedBox(
-                            height: 100,
-                            child: Center(child: Icon(Icons.broken_image, size: 40)),
+                  ),
+                  
+                  const SizedBox(height: 32),
+                  Divider(color: colorScheme.outlineVariant.withValues(alpha: 0.5)),
+                  const SizedBox(height: 24),
+
+                  // Grafik Başlığı
+                  Row(
+                    children: [
+                      Icon(Icons.insights_rounded, color: colorScheme.primary, size: 20),
+                      const SizedBox(width: 8),
+                      Text(
+                        "Teknik Gösterim",
+                        style: textTheme.titleMedium?.copyWith(
+                          fontWeight: FontWeight.bold, 
+                          color: colorScheme.onSurface,
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 16),
+                  
+                  // Büyütülebilir Grafik Kartı
+                  GestureDetector(
+                    onTap: () => _tamEkranResimGoster(context, ders.graphicUrl),
+                    child: Hero(
+                      tag: 'grafik_${ders.id}', // Hero animasyonu için
+                      child: Container(
+                        width: double.infinity,
+                        constraints: const BoxConstraints(minHeight: 200),
+                        decoration: BoxDecoration(
+                          color: colorScheme.surfaceContainerHigh,
+                          borderRadius: BorderRadius.circular(16),
+                          border: Border.all(color: colorScheme.outlineVariant.withValues(alpha: 0.5)),
+                        ),
+                        child: ClipRRect(
+                          borderRadius: BorderRadius.circular(15),
+                          child: CachedNetworkImage(
+                            imageUrl: ders.graphicUrl,
+                            fit: BoxFit.contain,
+                            // 🔥 Grafikteki gecikmeyi de aynı taktikle çözüyoruz
+                            cacheKey: ders.graphicUrl.split('?').first,
+                            placeholder: (context, url) => const SizedBox(
+                              height: 200,
+                              child: Center(child: CircularProgressIndicator()),
+                            ),
+                            errorWidget: (context, url, error) => const SizedBox(
+                              height: 200,
+                              child: Center(child: Icon(Icons.broken_image_rounded, size: 40)),
+                            ),
                           ),
                         ),
                       ),
                     ),
                   ),
+                  
+                  const SizedBox(height: 12),
+                  Center(
+                    child: Text(
+                      "Büyütmek için grafiğe dokunun",
+                      style: TextStyle(fontSize: 12, color: colorScheme.outline, fontStyle: FontStyle.italic),
+                    ),
+                  )
                 ],
-                ],
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  // =========================================================================
+  // TAM EKRAN GRAFİK DİYALOĞU
+  // =========================================================================
+  void _tamEkranResimGoster(BuildContext context, String url) {
+    showDialog(
+      context: context,
+      barrierColor: Colors.black.withValues(alpha: 0.9), // Sinema modu gibi simsiyah arka plan
+      builder: (context) => Dialog(
+        backgroundColor: Colors.transparent,
+        insetPadding: EdgeInsets.zero, // Ekranı tam kaplasın
+        child: Stack(
+          alignment: Alignment.center,
+          children: [
+            InteractiveViewer(
+              panEnabled: true,
+              maxScale: 4.0,
+              minScale: 0.5,
+              child: GestureDetector(
+                onTap: () => Navigator.pop(context),
+                child: SizedBox(
+                  width: double.infinity,
+                  height: double.infinity,
+                  child: Hero(
+                    tag: 'grafik_${ders.id}',
+                    child: CachedNetworkImage(
+                      imageUrl: url,
+                      fit: BoxFit.contain,
+                      cacheKey: url.split('?').first,
+                    ),
+                  ),
+                ),
+              ),
+            ),
+            // Çarpı (Kapat) Butonu
+            Positioned(
+              top: 40,
+              right: 20,
+              child: IconButton(
+                icon: const Icon(Icons.close_rounded, color: Colors.white, size: 30),
+                onPressed: () => Navigator.pop(context),
               ),
             ),
           ],
@@ -119,28 +233,4 @@ class RehberDetailScreen extends StatelessWidget {
       ),
     );
   }
-  void _tamEkranResimGoster(BuildContext context, String url) {
-  showDialog(
-    context: context,
-    barrierDismissible: true, // Resmin dışına basınca kapansın
-    builder: (context) => Dialog(
-      backgroundColor: Colors.transparent, // Arka planı şeffaf yaptık ki sadece resim gözüksün
-      insetPadding: const EdgeInsets.all(10), // Kenarlardan ufak bir boşluk
-      child: GestureDetector(
-        onTap: () => Navigator.pop(context), // Resme tekrar basınca da kapansın
-        child: InteractiveViewer( // Kullanıcı iki parmağıyla resmi büyütebilsin (Zoom)
-          panEnabled: true,
-          maxScale: 4.0,
-          child: Hero(
-            tag: 'grafik_${ders.id}', // Yukarıdaki tag ile tamamen aynı olmalı
-            child: CachedNetworkImage(
-              imageUrl: url,
-              fit: BoxFit.contain,
-            ),
-          ),
-        ),
-      ),
-    ),
-  );
-}
 }

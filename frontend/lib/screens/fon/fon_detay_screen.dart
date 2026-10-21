@@ -1,7 +1,10 @@
+import 'dart:async';
 import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:fl_chart/fl_chart.dart';
+import 'package:http/http.dart' as http;
 import 'package:intl/intl.dart';
+import 'package:trading_bot_app/constants/app_constants.dart';
 import 'package:trading_bot_app/models/fon_model.dart';
 import 'package:trading_bot_app/services/fon_service.dart';
 
@@ -22,16 +25,46 @@ class _FonDetayScreenState extends State<FonDetayScreen> {
   // Sadece yeni Modellerimizi tanımlıyoruz (Eski Map listelerini sildik)
   FonDetayModel? _fonDetay;
   FonKiyaslamaModel? _fonKiyaslama;
-  String _fonTipi = "Yatırım Fonu";
+  String _fonTipi = "... Fonu";
+
+  //portfoy ve tahmini getiri
+  double? _tahminiGetiri;
+  List<dynamic> _portfoyListesi = [];
+  bool _isTahminLoading = true;
 
   final FonService _fonService = FonService();
-  
+  Timer? _zamanlayici;
+  bool _istekDevamEdiyor = false; // 🔥 KİLİT MEKANİZMASI
+  List<String> _artanlar = [];
+  List<String> _azalanlar = [];
+  List<String> _eklenenler = [];
+  List<String> _cikanlar = [];
   @override
   void initState() {
     super.initState();
     _tumVerileriYukle();
+    _fetchTahminVerisi();
+
+    _zamanlayici = Timer.periodic(const Duration(seconds: 30), (timer) async {
+      
+
+      if (_istekDevamEdiyor) return; 
+
+      _istekDevamEdiyor = true;
+      
+      await _fetchTahminVerisi();
+      print("Tahmin verisi güncellendi: ${DateTime.now()}");
+      
+      _istekDevamEdiyor = false;
+    });
   }
 
+  @override
+  void dispose() {
+
+    _zamanlayici?.cancel();
+    super.dispose();
+  }
   Future<void> _tumVerileriYukle() async {
     setState(() {
       _loading = true;
@@ -58,6 +91,49 @@ class _FonDetayScreenState extends State<FonDetayScreen> {
         _loading = false;
       });
     }
+  }
+
+
+  Future<void> _fetchTahminVerisi() async {
+    try {
+      final response = await http.get(AppConstants.fonTahminUri(widget.fonKodu));
+      
+      if (response.statusCode == 200) {
+        final data = jsonDecode(response.body);
+        
+        if (data['islem_durumu'] == 'basarili') {
+          setState(() {
+            // Null safety için güvenli parse
+            _tahminiGetiri = (data['tahmini_getiri'] as num?)?.toDouble() ?? 0.0;
+            _portfoyListesi = data['detaylar'] ?? []; 
+            _isTahminLoading = false;
+            _artanlar = List<String>.from(data['artanlar'] ?? []);
+            _azalanlar = List<String>.from(data['azalanlar'] ?? []);
+            _eklenenler = List<String>.from(data['eklenenler'] ?? []);
+            _cikanlar = List<String>.from(data['cikanlar'] ?? []);
+            print("GELEN DATA: ${response.body}");
+print("ARTANLAR: ${data['artanlar']}");
+print("AZALANLAR: ${data['azalanlar']}");
+          });
+        } else {
+          // Backend borçlanma fonu veya hata dönerse burası çalışır
+          setState(() {
+            _tahminiGetiri = null;
+            _portfoyListesi = [];
+            _isTahminLoading = false;
+          });
+        }
+      }
+    } catch (e) {
+      print("Tahmin çekme hatası: $e");
+      setState(() {
+        _tahminiGetiri = null;
+        _portfoyListesi = [];
+        _isTahminLoading = false;
+      });
+    }
+
+    
   }
 
   void _onPeriodChanged(String period) {
@@ -118,6 +194,10 @@ class _FonDetayScreenState extends State<FonDetayScreen> {
                         const SizedBox(height: 24),
                         _buildKategoriCard(colorScheme),
                         const SizedBox(height: 24),
+                        _buildDegisimSection(colorScheme),
+                        const SizedBox(height: 24),
+                        _buildPortfolioSection(colorScheme),
+                        const SizedBox(height: 24),
                         _buildBenchmarkSection(colorScheme),
                         const SizedBox(height: 30),
                       ],
@@ -135,6 +215,8 @@ class _FonDetayScreenState extends State<FonDetayScreen> {
     final isPositive = getiri >= 0;
     final trendColor = isPositive ? const Color(0xFF00C853) : const Color(0xFFD50000);
 
+    final aiTahminBeklentisi = "Yükseliş Bekleniyor (+%4.5)";
+    
     return Container(
       padding: const EdgeInsets.all(18),
       decoration: BoxDecoration(
@@ -220,6 +302,43 @@ class _FonDetayScreenState extends State<FonDetayScreen> {
                 ),
               ),
             ],
+          ),
+
+          const SizedBox(height: 16),
+          // AI TAHMİN BÖLÜMÜ
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+            decoration: BoxDecoration(
+              gradient: LinearGradient(
+                colors: [
+                  Colors.deepPurpleAccent.withValues(alpha: 0.1),
+                  Colors.purple.withValues(alpha: 0.05)
+                ],
+              ),
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(color: Colors.deepPurpleAccent.withValues(alpha: 0.2)),
+            ),
+            child: Row(
+              children: [
+                const Icon(Icons.auto_awesome, color: Colors.deepPurpleAccent, size: 18),
+                const SizedBox(width: 8),
+                Expanded(
+                child: Text(
+                  _isTahminLoading 
+                      ? "AI Projeksiyonu: Hesaplanıyor..." 
+                      : _tahminiGetiri == null // EĞER DEĞER NULL İSE (BAVJ, BS1 gibi fonlar):
+                          ? "Yapay zeka analizi uygulanamıyor."
+                          // DEĞER VARSA ÜNLEMİ ŞİMDİ KULLANABİLİRİZ:
+                          : "AI Projeksiyonu: ${_tahminiGetiri! > 0 ? '+' : ''}${_tahminiGetiri!.toStringAsFixed(2)}%",
+                  style: TextStyle(
+                    fontSize: 13,
+                    fontWeight: FontWeight.w600,
+                    color: _tahminiGetiri == null ? Colors.deepPurpleAccent.withValues(alpha: 0.5) : Colors.deepPurpleAccent,
+                  ),
+                ),
+              ),
+              ],
+            ),
           ),
         ],
       ),
@@ -403,6 +522,220 @@ class _FonDetayScreenState extends State<FonDetayScreen> {
       ),
     );
   }
+
+
+  // Bu widget, Artan/Azalan listelerini ana ekranda derli toplu gösterir
+  Widget _buildDegisimSection(ColorScheme colorScheme) {
+    if (_artanlar.isEmpty && _azalanlar.isEmpty && _eklenenler.isEmpty && _cikanlar.isEmpty) {
+      return const SizedBox.shrink(); // Hiç değişim yoksa boşluk kaplamasın
+    }
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 8),
+          child: Text(
+            "Son Dönem Portföy Değişimleri",
+            style: TextStyle(
+              fontSize: 18,
+              fontWeight: FontWeight.bold,
+              color: colorScheme.onSurface,
+            ),
+          ),
+        ),
+        Container(
+          padding: const EdgeInsets.all(16),
+          decoration: BoxDecoration(
+            color: colorScheme.surfaceContainer,
+            borderRadius: BorderRadius.circular(16),
+            border: Border.all(color: colorScheme.outlineVariant.withValues(alpha: 0.4)),
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              _buildHisseChipList("🔥 Payı Artanlar", _artanlar, Colors.greenAccent),
+              _buildHisseChipList("🔻 Payı Azalanlar", _azalanlar, Colors.orangeAccent),
+              _buildHisseChipList("✨ Yeni Eklenenler", _eklenenler, Colors.blueAccent),
+              _buildHisseChipList("❌ Çıkarılanlar", _cikanlar, Colors.redAccent),
+            ],
+          ),
+        ),
+        const SizedBox(height: 24),
+      ],
+    );
+  }
+
+  // Hisse kodlarını yan yana janjanlı rozetler şeklinde basan yardımcı fonksiyon
+  Widget _buildHisseChipList(String baslik, List<String> hisseler, Color renk) {
+    if (hisseler.isEmpty) return const SizedBox.shrink();
+
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 12.0),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            baslik,
+            style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: renk),
+          ),
+          const SizedBox(height: 8),
+          Wrap(
+            spacing: 8, // Yatay boşluk
+            runSpacing: 8, // Dikey boşluk (alta geçerse)
+            children: hisseler.map((symbol) {
+              return Container(
+                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                decoration: BoxDecoration(
+                  color: renk.withValues(alpha: 0.1),
+                  borderRadius: BorderRadius.circular(8),
+                  border: Border.all(color: renk.withValues(alpha: 0.3)),
+                ),
+                child: Text(
+                  symbol,
+                  style: TextStyle(
+                    color: renk,
+                    fontWeight: FontWeight.bold,
+                    fontSize: 12,
+                  ),
+                ),
+              );
+            }).toList(),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildPortfolioSection(ColorScheme colorScheme) {
+    // 1. Sahte listeyi sildik. Doğrudan API'den gelen listeyi kontrol ediyoruz.
+    if (_portfoyListesi.isEmpty) {
+      return const SizedBox.shrink();
+    }
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 8),
+          child: Text(
+            "Portföy Dağılımı",
+            style: TextStyle(
+              fontSize: 18,
+              fontWeight: FontWeight.bold,
+              color: colorScheme.onSurface,
+            ),
+          ),
+        ),
+        ListView.separated(
+          shrinkWrap: true,
+          physics: const NeverScrollableScrollPhysics(),
+          itemCount: _portfoyListesi.length, // 2. Gerçek listenin uzunluğunu verdik!
+          separatorBuilder: (context, index) => const SizedBox(height: 8),
+          itemBuilder: (context, index) {
+            
+            final item = _portfoyListesi[index];
+            final symbol = item['symbol'];
+            final weight = (item['weight'] as num).toDouble();
+            final katki = (item['katki'] as num?)?.toDouble() ?? 0.0; 
+
+            return Container(
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: colorScheme.surfaceContainer,
+                borderRadius: BorderRadius.circular(16),
+                border: Border.all(color: colorScheme.outlineVariant.withValues(alpha: 0.4)),
+              ),
+              child: Row(
+                children: [
+                  Container(
+                    width: 40,
+                    height: 40,
+                    decoration: BoxDecoration(
+                      color: colorScheme.primary.withValues(alpha: 0.1),
+                      shape: BoxShape.circle,
+                    ),
+                    child: Center(
+                      child: Text(
+                        symbol.substring(0, 1),
+                        style: TextStyle(
+                          color: colorScheme.primary,
+                          fontWeight: FontWeight.bold,
+                          fontSize: 16,
+                        ),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          symbol,
+                          style: TextStyle(
+                            fontSize: 15,
+                            fontWeight: FontWeight.bold,
+                            color: colorScheme.onSurface,
+                          ),
+                        ),
+                        const SizedBox(height: 2),
+                        Text(
+                          // Backend'den şirket adı gelmediği için fona katkısını yazdırıyoruz (Çok daha şık)
+                          "Fona Katkı: ${katki > 0 ? '+' : ''}${katki.toStringAsFixed(3)}%",
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: TextStyle(
+                            fontSize: 12,
+                            fontWeight: FontWeight.w500,
+                            color: katki >= 0 ? Colors.green : Colors.redAccent,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  Column(
+                    crossAxisAlignment: CrossAxisAlignment.end,
+                    children: [
+                      Text(
+                        '%${weight.toStringAsFixed(2)}',
+                        style: TextStyle(
+                          fontSize: 15,
+                          fontWeight: FontWeight.bold,
+                          color: colorScheme.primary,
+                        ),
+                      ),
+                      const SizedBox(height: 6),
+                      Container(
+                        width: 60,
+                        height: 4,
+                        decoration: BoxDecoration(
+                          color: colorScheme.outlineVariant.withValues(alpha: 0.3),
+                          borderRadius: BorderRadius.circular(2),
+                        ),
+                        child: Align(
+                          alignment: Alignment.centerLeft,
+                          child: Container(
+                            width: 60 * (weight / 100).clamp(0.0, 1.0), 
+                            decoration: BoxDecoration(
+                              color: colorScheme.primary,
+                              borderRadius: BorderRadius.circular(2),
+                            ),
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+            );
+          },
+        ),
+        const SizedBox(height: 24),
+      ],
+    );
+  }
+
 
   Widget _buildBenchmarkSection(ColorScheme colorScheme) {
     final kiyaslamaListesi = _fonKiyaslama?.kiyaslamaAraclari ?? [];

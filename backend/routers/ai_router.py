@@ -5,7 +5,7 @@ import json
 import yfinance as yf
 import pandas as pd
 
-router = APIRouter(prefix="/ai", tags=["Yapay Zeka Analizi"])
+router = APIRouter(tags=["Yapay Zeka Analizi"])
 
 GROQ_API_KEY = "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"
 GROQ_MODEL = "openai/gpt-oss-20b"
