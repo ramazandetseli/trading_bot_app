@@ -20,6 +20,8 @@ dependencies:
   flutter_inappwebview: ^6.1.5
   syncfusion_flutter_charts: ^33.2.12
   flutter_svg: ^2.3.0
+  onesignal_flutter: ^5.6.8
+  provider: ^6.1.5+1
 
 dev_dependencies:
   flutter_test:

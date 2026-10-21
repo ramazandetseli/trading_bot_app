@@ -6,12 +6,14 @@ import 'package:trading_bot_app/screens/fon/widgets/fon_card.dart';
 class FonListView extends StatelessWidget {
   final bool isLoading;
   final List<FonOzetModel> displayFonlar;
+  final String? errorMessage;
   final Future<void> Function() onRefresh;
 
   const FonListView({
     super.key,
     required this.isLoading,
     required this.displayFonlar,
+    this.errorMessage,
     required this.onRefresh,
   });
 
@@ -23,11 +25,32 @@ class FonListView extends StatelessWidget {
       return Center(child: CircularProgressIndicator(color: colorScheme.primary));
     }
 
-    if (displayFonlar.isEmpty) {
+    if (errorMessage != null && displayFonlar.isEmpty) {
       return Center(
-        child: Text(
-          'Eşleşen fon bulunamadı.',
-          style: TextStyle(color: colorScheme.onSurfaceVariant),
+        child: Padding(
+          padding: const EdgeInsets.all(24.0),
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              const Icon(Icons.wifi_off_rounded, size: 54, color: Colors.orangeAccent),
+              const SizedBox(height: 16),
+              Text(
+                errorMessage!,
+                textAlign: TextAlign.center,
+                style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w500),
+              ),
+              const SizedBox(height: 20),
+              ElevatedButton.icon(
+                onPressed: onRefresh,
+                icon: const Icon(Icons.refresh),
+                label: const Text("Tekrar Dene"),
+                style: ElevatedButton.styleFrom(
+                  padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                ),
+              ),
+            ],
+          ),
         ),
       );
     }

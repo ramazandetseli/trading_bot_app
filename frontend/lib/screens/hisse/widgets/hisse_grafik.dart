@@ -49,7 +49,8 @@ class _HisseGrafikWidgetState extends State<HisseGrafikWidget> {
     });
 
     try {
-      final uri = Uri.parse("${AppConstants.baseUrl}/hisse-tarihsel/${widget.symbol}?period=$_selectedPeriod");
+      // 🔥 İŞTE SİHİRLİ DOKUNUŞ BURASI! Eski satırı sildik, ApiService/AppConstants ile uyumlu hale getirdik.
+      final uri = AppConstants.hisseTarihselUri(widget.symbol, _selectedPeriod);
       final res = await http.get(uri).timeout(const Duration(seconds: 12));
 
       if (res.statusCode == 200) {

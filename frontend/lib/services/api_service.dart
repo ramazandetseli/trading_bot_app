@@ -14,7 +14,7 @@ class ApiService {
       debugPrint("Server Durum Kodu: ${response.statusCode}");
 
       if (response.statusCode == 200) {
-        Map<String, dynamic> data = json.decode(response.body);
+        Map<String, dynamic> data = json.decode(response.body); 
         return data['veriler'] ?? []; 
       } else {
         throw Exception('Sunucu hatası, Kod: ${response.statusCode}');
@@ -31,11 +31,10 @@ class ApiService {
   try {
     Uri uri;
     if (isGelismisMod) {
-      // 👑 Seçilen periyodu URL'ye ekliyoruz
-      uri = Uri.parse("${AppConstants.baseUrl}/ai/deep-analiz?symbol=$symbol&rsi=$rsi&vol=$relVol&price=$price&change=$change&period=$period");
-    } else {
-      uri = Uri.parse("${AppConstants.baseUrl}/ai/basic-analiz?symbol=$symbol&price=$price&rsi=$rsi");
-    }
+        uri = Uri.parse("${AppConstants.baseUrl}/api/ai/deep-analiz?symbol=$symbol&rsi=$rsi&vol=$relVol&price=$price&change=$change&period=$period");
+      } else {
+        uri = Uri.parse("${AppConstants.baseUrl}/api/ai/basic-analiz?symbol=$symbol&price=$price&rsi=$rsi");
+      }
 
     final response = await http.get(uri).timeout(const Duration(seconds: 20));
     if (response.statusCode == 200) {
@@ -64,9 +63,13 @@ class ApiService {
   }
 
   // 📊 Hisse Tarihsel Veri
-  Future<Map<String, dynamic>> getHisseTarihsel(String symbol, String period) async {
+Future<Map<String, dynamic>> getHisseTarihsel(String symbol, String period) async {
     try {
-      final response = await http.get(AppConstants.hisseTarihselUri(symbol, period));
+      // 1. Önce Uri adresini alıyoruz
+      final uri = AppConstants.hisseTarihselUri(symbol, period);   
+      
+      // 2. HTTP GET isteğini GERÇEKTE şimdi atıyoruz!
+      final response = await http.get(uri);
       
       if (response.statusCode == 200) {
         return json.decode(response.body);
@@ -149,7 +152,35 @@ class ApiService {
     }
   }
 
+//  Günlük Piyasa (Yükselenler, Düşenler, Hacimliler)
+  Future<Map<String, dynamic>> gunlukIstatistikleriGetir() async {
+    try {
+      final response = await http.get(AppConstants.hisseIstatistikUri).timeout(const Duration(seconds: 10));
+      if (response.statusCode == 200) {
+        return json.decode(response.body);
+      }
+      return {};
+    } catch (e) {
+      debugPrint("İstatistik getirme hatası: $e");
+      return {};
+    }
+  }
 
 
-  
+
+ // 🏆 Fon Vitrini (Popüler AI, Yükselen, Düşen)
+  Future<Map<String, dynamic>> fonVitrinGetir() async {
+    try {
+      final response = await http.get(AppConstants.fonVitrinUri).timeout(const Duration(seconds: 15));
+      if (response.statusCode == 200) {
+        return json.decode(response.body);
+      }
+      return {};
+    } catch (e) {
+      debugPrint("Fon vitrin hatası: $e");
+      return {};
+    }
+  } 
 }
+
+

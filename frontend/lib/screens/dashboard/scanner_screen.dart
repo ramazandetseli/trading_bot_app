@@ -156,6 +156,7 @@ class _ScannerScreenState extends State<ScannerScreen> {
       ),
       body: Column(
         children: [
+          const SizedBox(height: 12),
           Padding(
             padding: const EdgeInsets.symmetric(vertical: 16),
             child: SingleChildScrollView(

@@ -6,9 +6,11 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:trading_bot_app/constants/app_constants.dart';
 import 'package:trading_bot_app/models/fon_model.dart';
 import 'package:trading_bot_app/models/hisse_model.dart';
+import 'package:trading_bot_app/portfolio/portfolio_summary_card.dart';
 import 'package:trading_bot_app/screens/dashboard/widgets/market_search_bar.dart';
 import 'package:trading_bot_app/screens/dashboard/widgets/hisse_list_view.dart';
 import 'package:trading_bot_app/screens/dashboard/widgets/fon_list_view.dart';
+import 'package:trading_bot_app/screens/dashboard/widgets/piyasa_vitrini_widget.dart';
 import 'package:trading_bot_app/services/fon_service.dart';
 
 class DashboardScreen extends StatefulWidget {
@@ -31,6 +33,7 @@ class _DashboardScreenState extends State<DashboardScreen> with SingleTickerProv
   bool _hisseTabAktif = true;
   String query = '';
   Set<String> favoriHisseler = {};
+  String? _errorMessage = null;
 
   String seciliFonKategorisi = 'Tümü';
 
@@ -225,9 +228,12 @@ Future<void> trendFonlariGetir() async {
       } else {
         setState(() => hisselerYukleniyor = false);
       }
-    } catch (e) {
+     } catch (e) {
       debugPrint("Hisse verisi çekme hatası: $e");
-      setState(() => hisselerYukleniyor = false);
+      setState(() {
+        hisselerYukleniyor = false;
+        _errorMessage = "Bağlantı kurulamadı. İnternetini veya sunucuyu kontrol et."; // Sadece gerçek hata mesajı!
+      });
     }
   }
 
@@ -241,8 +247,11 @@ Future<void> trendFonlariGetir() async {
         fonlarYukleniyor = false;
       });
     } catch (e) {
-      debugPrint("Fon listesi hata: $e");
-      setState(() => fonlarYukleniyor = false);
+      debugPrint("Fon verisi çekme hatası: $e");
+      setState(() {
+        fonlarYukleniyor = false;
+        _errorMessage = "Bağlantı kurulamadı. İnternetini veya sunucuyu kontrol et.";
+      });
     }
   }
 
@@ -281,13 +290,21 @@ Future<void> trendFonlariGetir() async {
   Widget build(BuildContext context) {
     final colorScheme = Theme.of(context).colorScheme;
     final textTheme = Theme.of(context).textTheme;
+  final String currentUserId = Supabase.instance.client.auth.currentUser?.id ?? '';
 
+    // 🔥 2. Canlı Fiyat Haritası (_parsedHisseler listesinden otomatik eşleme)
+    final Map<String, double> canliFiyatHaritasi = {
+      for (final h in _parsedHisseler)
+        h.symbol.toUpperCase(): (double.tryParse(h.price.toString()) ?? 0.0)
+    };
     return Scaffold(
+      resizeToAvoidBottomInset: false,
       backgroundColor: colorScheme.surface,
       appBar: AppBar(
         backgroundColor: Colors.transparent,
         elevation: 0,
         centerTitle: true,
+
         title: Text(
           'Piyasa Terminali',
           style: textTheme.titleLarge?.copyWith(fontWeight: FontWeight.bold, color: colorScheme.onSurface),
@@ -332,6 +349,7 @@ Future<void> trendFonlariGetir() async {
       ),
       body: Column(
         children: [
+          Text('Veriler 15 dakika gecikmeli olarak sunulmaktadır.', style: TextStyle(fontSize: 12, color: colorScheme.primary)),
           const SizedBox(height: 14),
           MarketSearchBar(
             controller: _searchController,
@@ -343,15 +361,25 @@ Future<void> trendFonlariGetir() async {
               });
             },
           ),
-          
+          const SizedBox(height: 5,),
+
+          // 2. Canlı Portföy Özeti Kartı
+                if (currentUserId.isNotEmpty)
+                  PortfolioSummaryCard(
+                    userId: currentUserId,
+                    anlikFiyatlar: canliFiyatHaritasi,
+                  ),
+
+// 3. Piyasa Özeti (Top 5) Akordeon    
           // 🎯 ÇİPLER BURAYA BAĞLANIYOR
           const SizedBox(height: 10),
           if (_hisseTabAktif) ...[
+            PiyasaVitriniWidget(),
             _buildFilterChipsBar(colorScheme),
             const SizedBox(height: 10),
             _buildDurumBandi(colorScheme),
           ] else ...[
-            _buildFonFilterChipsBar(colorScheme), // 👈 Fon çipleri buraya geliyor
+            _buildFonFilterChipsBar(colorScheme),
           ],
           
           const SizedBox(height: 12),
@@ -503,7 +531,66 @@ Future<void> trendFonlariGetir() async {
       ),
     );
   }
+Widget _buildMiniPortfoyKarti(BuildContext context) {
+  const bool isPositive = true; // Dinamik kâr/zarar durumuna göre
+  final Color statusColor = isPositive ? const Color(0xFF00E676) : const Color(0xFFFF5252);
 
+  return Container(
+    margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
+    decoration: BoxDecoration(
+      color: const Color(0xFF0D1420),
+      borderRadius: BorderRadius.circular(16),
+      border: Border.all(color: const Color(0xFF1E293B)),
+    ),
+    child: InkWell(
+      borderRadius: BorderRadius.circular(16),
+      onTap: () => (context),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+        child: Row(
+          children: [
+            Container(
+              padding: const EdgeInsets.all(8),
+              decoration: BoxDecoration(
+                color: const Color(0xFF2A2254).withValues(alpha: 0.5),
+                borderRadius: BorderRadius.circular(10),
+              ),
+              child: const Icon(Icons.account_balance_wallet_rounded, color: Color(0xFFB39DDB), size: 20),
+            ),
+            const SizedBox(width: 12),
+            const Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text('Portföy Değeri', style: TextStyle(color: Colors.white54, fontSize: 11, fontWeight: FontWeight.w500)),
+                  SizedBox(height: 2),
+                  Text('₺124.850,00', style: TextStyle(color: Colors.white, fontSize: 15, fontWeight: FontWeight.bold)),
+                ],
+              ),
+            ),
+            Column(
+              crossAxisAlignment: CrossAxisAlignment.end,
+              children: [
+                Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Icon(isPositive ? Icons.trending_up : Icons.trending_down, color: statusColor, size: 14),
+                    const SizedBox(width: 4),
+                    Text('%2.45', style: TextStyle(color: statusColor, fontSize: 13, fontWeight: FontWeight.bold)),
+                  ],
+                ),
+                const SizedBox(height: 2),
+                Text('+₺2.980', style: TextStyle(color: statusColor.withValues(alpha: 0.8), fontSize: 11)),
+              ],
+            ),
+            const SizedBox(width: 8),
+            const Icon(Icons.chevron_right_rounded, color: Colors.white30, size: 20),
+          ],
+        ),
+      ),
+    ),
+  );
+}
   Widget _buildDurumBandi(ColorScheme colorScheme) {
     final taranan = _parsedHisseler.length;
     
