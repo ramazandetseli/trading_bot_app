@@ -1,6 +1,6 @@
 class AppConstants {
   // Canlıya alırken bunu 'false' yapman yeterli
-  static const bool isDevelopment = true;
+  static const bool isDevelopment = false;
 
   // Local IP (FastAPI)
   static const String _localUrl = "http://192.168.1.114:8000";
@@ -62,7 +62,7 @@ static Uri hisseTarihselUri(String symbol, String period) =>
   static Uri get oneCikanFonlarUri => 
       Uri.parse("$baseUrl/api/fon/one-cikanlar");
 
-  // YENİ: FVT üzerinden fonun hisse dağılımını çeken rota
+  // FVT üzerinden fonun hisse dağılımını çeken rota
   static Uri fonPortfoyUri(String fonKodu) =>
       Uri.parse("$baseUrl/api/fon/portfoy/${fonKodu.toUpperCase()}");
       
@@ -71,13 +71,9 @@ static Uri hisseTarihselUri(String symbol, String period) =>
 
   static Uri get fonVitrinUri => Uri.parse("$baseUrl/api/fon/vitrin");
 
-  //portfoy işlemleri için URL'ler
   // --- PORTFÖY (/api/kullanici) ---
   static Uri get portfolioEkleUri => Uri.parse("$baseUrl/api/kullanici/portfolio-ekle");
-  
   static Uri get portfolioSilUri => Uri.parse("$baseUrl/api/kullanici/portfolio-sil");
-
   static Uri portfolioGetirUri(String userId) =>
       Uri.parse("$baseUrl/api/kullanici/portfolio/$userId");
-
 }
