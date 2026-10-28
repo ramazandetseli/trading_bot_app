@@ -6,6 +6,7 @@ from routers.fon import router as fon_router
 from routers.hisse import router as hisse_router
 from routers.kullanici import router as kullanici_router
 from routers.ai_router import router as ai_router
+from routers.piyasa import router as piyasa_router
 
 app = FastAPI(title="Finans API", version="2.0")
 
@@ -22,7 +23,7 @@ app.include_router(fon_router, prefix="/api/fon", tags=["Fon İşlemleri"])
 app.include_router(hisse_router, prefix="/api/hisse", tags=["Hisse ve Piyasa"])
 app.include_router(kullanici_router, prefix="/api/kullanici", tags=["Favori ve Alarmlar"])
 app.include_router(ai_router, prefix="/api/ai", tags=["Yapay Zeka Analizi"])
+app.include_router(piyasa_router, prefix="/api/piyasa", tags=["Piyasa Verileri"])
 
-@app.get("/")
 def ana_sayfa():
     return {"mesaj": "Borsa & Fon Backend API Çalışıyor! 🚀"}

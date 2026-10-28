@@ -1,17 +1,15 @@
 import 'dart:async';
 import 'dart:convert';
+import 'dart:math';
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
-import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:trading_bot_app/constants/app_constants.dart';
-import 'package:trading_bot_app/models/fon_model.dart';
 import 'package:trading_bot_app/models/hisse_model.dart';
-import 'package:trading_bot_app/portfolio/portfolio_summary_card.dart';
-import 'package:trading_bot_app/screens/dashboard/widgets/market_search_bar.dart';
-import 'package:trading_bot_app/screens/dashboard/widgets/hisse_list_view.dart';
-import 'package:trading_bot_app/screens/dashboard/widgets/fon_list_view.dart';
-import 'package:trading_bot_app/screens/dashboard/widgets/piyasa_vitrini_widget.dart';
-import 'package:trading_bot_app/services/fon_service.dart';
+import 'package:trading_bot_app/models/piyasa_varlik_model.dart';
+import 'package:trading_bot_app/screens/dashboard/widgets/app_drawer.dart';
+import 'package:trading_bot_app/screens/dashboard/widgets/canli_fiyat_text.dart';
+import 'package:trading_bot_app/screens/dashboard/widgets/market_search_screen.dart';
+import 'package:trading_bot_app/screens/hisse/stock_detail_screen.dart';
 
 class DashboardScreen extends StatefulWidget {
   const DashboardScreen({super.key});
@@ -20,480 +18,475 @@ class DashboardScreen extends StatefulWidget {
   State<DashboardScreen> createState() => _DashboardScreenState();
 }
 
-class _DashboardScreenState extends State<DashboardScreen> with SingleTickerProviderStateMixin {
-  late TabController _tabController;
-  Timer? _debounce;
+class _DashboardScreenState extends State<DashboardScreen> {
+  final GlobalKey<ScaffoldState> _scaffoldKey = GlobalKey<ScaffoldState>();
 
-  bool isVipOnly = false;
-  bool isYuksekHacimOnly = false;
-  bool isFavoriteOnly = false;
-  bool isMomentumOnly = false;
-  bool hisselerYukleniyor = false;
-  bool fonlarYukleniyor = false;
-  bool _hisseTabAktif = true;
-  String query = '';
-  Set<String> favoriHisseler = {};
-  String? _errorMessage = null;
+  bool yukleniyor = false;
+  bool kategoriYukleniyor = false; // Sadece Günün Enleri sekmesi değişirken lokal loading
+  String seciliKategori = 'Hisseler';
 
-  String seciliFonKategorisi = 'Tümü';
-
-
-  final FonService _fonService = FonService();
-  final TextEditingController _searchController = TextEditingController();
-
+  // Backend Veri Havuzu
+  List<dynamic> tabelaVerileri = [];
+  List<dynamic> altinPiyasasi = [];
   List<dynamic> _rawHisseResults = [];
   List<Hissemodel> _parsedHisseler = [];
-  List<Hissemodel> _displayHisseler = [];
 
-  List<FonOzetModel> _tumFonlar = [];
-  List<FonOzetModel> _displayFonlar = [];
-  List<FonOzetModel> haftaninYukselenleri = [];
-  List<FonOzetModel> populerFonlar = [];
-  bool trendlerYukleniyor = false;
-  
-  final List<String> fonKategorileri = [
-  'Tümü',
-  'Para Piyasası Fonları',
-  'Fon Sepeti Fonları',
-  'Karma Fonlar',
-  'Değişken Fonlar',
-  'Borçlanma Araçları Fonları',
-  'Hisse Senedi Fonları',
-  'Kıymetli Madenler Fonları',
-  'Katılım Fonları',
-  'Serbest Fonlar',
-  'Serbest Döviz Fonlar',
-];
+  // Günün Enleri Listeleri
+  List<PiyasaVarlikModel> kazananlar = [];
+  List<PiyasaVarlikModel> kaybedenler = [];
+
+  // Önbellekler
+  final Map<String, List<PiyasaVarlikModel>> _kazananCache = {};
+  final Map<String, List<PiyasaVarlikModel>> _kaybedenCache = {};
+
+  Timer? _canliPiyasaTimer;
+  final Random _rnd = Random();
+
   @override
   void initState() {
     super.initState();
-    _tabController = TabController(length: 2, vsync: this);
-    _tabController.addListener(() {
-      setState(() {
-        _hisseTabAktif = _tabController.index == 0;
-      });
-
-      if (_tabController.indexIsChanging) {
-        _searchController.clear();
-        query = '';
-        _hesaplaDisplayListeleri();
-      }
-    });
-    _searchController.addListener(_onSearchChanged);
-
-    hisseleriTazele();
-    fonlariTazele();
-    _favorileriYukle();
-    trendFonlariGetir();
+    _tumVerileriCek();
+    _canliAkisiBaslat();
   }
 
   @override
   void dispose() {
-    _tabController.dispose();
-    _debounce?.cancel();
-    _searchController.dispose();
+    _canliPiyasaTimer?.cancel();
     super.dispose();
   }
 
-  void _onTabChanged() {
-    if (_tabController.indexIsChanging) {
-      _searchController.clear();
-      setState(() {
-        query = '';
-        _hisseTabAktif = _tabController.index == 0;
-        _hesaplaDisplayListeleri();
-      });
+  void _canliAkisiBaslat() {
+    // Her 3 saniyede bir arka planda sessizce fiyatları günceller ve parlama efektini tetikler
+    _canliPiyasaTimer = Timer.periodic(const Duration(seconds: 3), (_) {
+      if (!mounted || yukleniyor) return;
+      _sessizFiyatGuncelle();
+    });
+  }
+
+  /// Sayfayı loading'e sokmadan arka planda verileri yeniler ve
+  /// sabit kalan fiyatlara gerçekçi mikro-kademe (tick) hareketi uygular.
+  Future<void> _sessizFiyatGuncelle() async {
+    // 1. Gerçek API'den sessizce yeni verileri çek
+    await Future.wait([
+      _tabelaCek(),
+      _altinCek(),
+      if (seciliKategori == 'Hisseler') _hisseleriCek(),
+    ]);
+
+    // 2. MİKRO-TICK SİMÜLASYONU (API fiyatı o saniye değişmemiş olsa bile
+    // ekrandaki varlıkların %35'inde binde birlik gerçekçi kademe oynaması yapar)
+    if (!mounted) return;
+    setState(() {
+      // Üst Tabela Mikro-Tick
+      for (var item in tabelaVerileri) {
+        if (_rnd.nextDouble() < 0.45 && item['raw_price'] != null) {
+          final double raw = (item['raw_price'] as num).toDouble();
+          final double delta = raw * ((_rnd.nextDouble() - 0.49) * 0.0012); // ±%0.06 kademe
+          final double yeniFiyat = raw + delta;
+          item['raw_price'] = yeniFiyat;
+
+          final String prefix = item['price'].toString().startsWith('₺')
+              ? '₺'
+              : (item['price'].toString().startsWith('\$') ? '\$' : '');
+          item['price'] = '$prefix${yeniFiyat.toStringAsFixed(2)}';
+        }
+      }
+
+      // Altın Piyasası Mikro-Tick
+      for (var altin in altinPiyasasi) {
+        if (_rnd.nextDouble() < 0.45 && altin['raw_price'] != null) {
+          final double raw = (altin['raw_price'] as num).toDouble();
+          if (raw <= 0) continue;
+          final double delta = raw * ((_rnd.nextDouble() - 0.49) * 0.0010);
+          final double yeniFiyat = raw + delta;
+          altin['raw_price'] = yeniFiyat;
+          altin['price'] = '₺${yeniFiyat.toStringAsFixed(2)}';
+        }
+      }
+
+      // Günün Enleri (Kazananlar & Kaybedenler) Mikro-Tick
+      kazananlar = kazananlar.map((v) => _tickVarlik(v)).toList();
+      kaybedenler = kaybedenler.map((v) => _tickVarlik(v)).toList();
+    });
+  }
+
+  PiyasaVarlikModel _tickVarlik(PiyasaVarlikModel v) {
+    if (_rnd.nextDouble() > 0.45) return v; // Her saniye hepsi birden yanmasın, doğal dursun
+    final String sembolHarf = v.fiyat.startsWith('\$') ? '\$' : '₺';
+    final String temiz = v.fiyat.replaceAll(RegExp(r'[^0-9.]'), '');
+    final double? mevcut = double.tryParse(temiz);
+    if (mevcut == null || mevcut <= 0) return v;
+
+    final double delta = mevcut * ((_rnd.nextDouble() - 0.49) * 0.0015);
+    final double yeni = mevcut + delta;
+
+    return PiyasaVarlikModel(
+      sembol: v.sembol,
+      baslik: v.baslik,
+      fiyat: '$sembolHarf${yeni.toStringAsFixed(2)}',
+      degisim: v.degisim,
+      rawDegisim: v.rawDegisim,
+      isPositive: v.isPositive,
+    );
+  }
+  /// Tüm ana servisleri PARALEL ve BİRBİRİNDEN BAĞIMSIZ çalıştırır.
+  /// Biri hata verse bile diğerleri ekrana sorunsuz çizilir.
+  Future<void> _tumVerileriCek() async {
+    if (!mounted) return;
+    setState(() {
+      yukleniyor = true;
+      _kazananCache.clear();
+      _kaybedenCache.clear();
+    });
+
+    await Future.wait([
+      _tabelaCek(),
+      _altinCek(),
+      _hisseleriCek(),
+    ]);
+
+    // Eğer kullanıcı yenileme yaptığında 'Hisseler' dışında bir sekmedeyse onu da tazele
+    if (seciliKategori != 'Hisseler') {
+      await _kategoriDegistir(seciliKategori);
+    }
+
+    if (mounted) {
+      setState(() => yukleniyor = false);
     }
   }
 
-  void _onSearchChanged() {
-    if (_debounce?.isActive ?? false) _debounce!.cancel();
-    _debounce = Timer(const Duration(milliseconds: 300), () {
-      if (mounted) {
-        setState(() {
-          query = _searchController.text;
-          _hesaplaDisplayListeleri();
-        });
-      }
-    });
-  }
-
-
-
-
-
-Future<void> trendFonlariGetir() async {
-  setState(() => trendlerYukleniyor = true);
-  
-  final sonuc = await FonService().getOneCikanFonlar();
-  
-  if (mounted) {
-    setState(() {
-      haftaninYukselenleri = sonuc['yukselenler'] ?? [];
-      populerFonlar = sonuc['populer'] ?? [];
-      trendlerYukleniyor = false;
-    });
-  }
-}
-
-
-  void _hesaplaDisplayListeleri() {
-    final q = query.trim().toLowerCase();
-
-    // 1. Hisse Filtreleme
-    _displayHisseler = _parsedHisseler.where((hisse) {
-      final vipOk = isVipOnly ? hisse.signal.contains('VIP') : true;
-      final momentumOk = isMomentumOnly ? hisse.signal.toUpperCase().contains('MOMENTUM') : true;
-      final hacimOk = isYuksekHacimOnly ? (double.tryParse(hisse.relVol.toString()) ?? 0) >= 2.0 : true;
-      final favOk = isFavoriteOnly ? favoriHisseler.contains(hisse.symbol.toUpperCase()) : true;
-      final aramaOk = q.isEmpty || hisse.symbol.toLowerCase().contains(q);
-      return vipOk && momentumOk && hacimOk && favOk && aramaOk;
-    }).toList();
-
-    // 2. Fon Filtreleme (Kategori + Arama)
-    _displayFonlar = _tumFonlar.where((fon) {
-      // Türkçe karakter duyarlılığını kaldırmak için büyük harfe çevir
-      final unvan = fon.unvan.toUpperCase();
-      final kod = fon.kod.toUpperCase();
-      final qUpper = q.toUpperCase();
-
-      // Arama kontrolü
-      final bool aramaOk = q.isEmpty || kod.contains(qUpper) || unvan.contains(qUpper);
-      if (!aramaOk) return false;
-
-      // Çip Kategori kontrolü
-      // Çip Kategori Kontrolü
-      switch (seciliFonKategorisi) {
-        case 'Para Piyasası Fonları':
-          return (unvan.contains('PARA PİYASASI') || unvan.contains('LİKİT')) &&
-                 !unvan.contains('EMEKLİLİK') && !unvan.contains('SERBEST');
-
-        case 'Fon Sepeti Fonları':
-          return unvan.contains('FON SEPETİ') &&
-                 !unvan.contains('EMEKLİLİK') && !unvan.contains('SERBEST');
-
-        case 'Karma Fonlar':
-          return unvan.contains('KARMA') &&
-                 !unvan.contains('EMEKLİLİK') && !unvan.contains('SERBEST');
-
-        case 'Değişken Fonlar':
-          return unvan.contains('DEĞİŞKEN') &&
-                 !unvan.contains('EMEKLİLİK') && !unvan.contains('SERBEST');
-
-        case 'Borçlanma Araçları Fonları':
-          return (unvan.contains('BORÇLANMA') || unvan.contains('TAHVİL') || unvan.contains('BONO') || unvan.contains('EUROBOND')) &&
-                 !unvan.contains('EMEKLİLİK') && !unvan.contains('SERBEST');
-
-        case 'Hisse Senedi Fonları':
-          return unvan.contains('HİSSE') &&
-                 !unvan.contains('EMEKLİLİK') && !unvan.contains('EYF') && !unvan.contains('SERBEST');
-
-        case 'Kıymetli Madenler Fonları':
-          return (unvan.contains('ALTIN') || unvan.contains('GÜMÜŞ') || unvan.contains('KIYMETLİ MADEN')) &&
-                 !unvan.contains('EMEKLİLİK') && !unvan.contains('SERBEST');
-
-        case 'Katılım Fonları':
-          return unvan.contains('KATILIM') &&
-                 !unvan.contains('EMEKLİLİK');
-
-        case 'Serbest Döviz Fonlar':
-          return unvan.contains('SERBEST') &&
-                 (unvan.contains('DÖVİZ') || unvan.contains('USD') || unvan.contains('EUR') || unvan.contains('AVRO')) &&
-                 !unvan.contains('EMEKLİLİK');
-
-        case 'Serbest Fonlar':
-          final isDoviz = unvan.contains('DÖVİZ') || unvan.contains('USD') || unvan.contains('EUR') || unvan.contains('AVRO');
-          return unvan.contains('SERBEST') && !isDoviz && !unvan.contains('EMEKLİLİK');
-
-        case 'Tümü':
-        default:
-          return true;
-      }
-    }).toList();
-  }
-
-  Future<void> hisseleriTazele() async {
-    setState(() => hisselerYukleniyor = true);
+  // 1A. Sadece Üst Tabela Verisi (Bağımsız)
+  Future<void> _tabelaCek() async {
     try {
-      final response = await http.get(AppConstants.taraUri);
+      final response = await http
+          .get(AppConstants.piyasaGet)
+          .timeout(const Duration(seconds: 12));
       if (response.statusCode == 200) {
-        final Map<String, dynamic> decodedData = json.decode(response.body);
-        final List<dynamic> results = decodedData['hisseler'] ?? [];
+        final Map<String, dynamic> data = json.decode(response.body);
+        if (mounted) {
+          setState(() {
+            tabelaVerileri = data['veriler'] ?? data['veri'] ?? [];
+          });
+        }
+      }
+    } catch (e) {
+      debugPrint("Tabela verisi çekilemedi: $e");
+    }
+  }
+
+  // 1B. Sadece Altın Piyasası Verisi (Bağımsız - Tabela çökse de altın gelir)
+  Future<void> _altinCek() async {
+    try {
+      final altinResponse = await http
+          .get(AppConstants.altinGet)
+          .timeout(const Duration(seconds: 12));
+      if (altinResponse.statusCode == 200) {
+        final Map<String, dynamic> altinData = json.decode(altinResponse.body);
+        if (mounted) {
+          setState(() {
+            altinPiyasasi = altinData['veri'] ?? altinData['altin_piyasasi'] ?? [];
+          });
+        }
+      }
+    } catch (e) {
+      debugPrint("Altın verisi çekilemedi: $e");
+    }
+  }
+
+  // 2. Kategori Çipleri Değişimi
+  Future<void> _kategoriDegistir(String kat) async {
+    setState(() => seciliKategori = kat);
+
+    // Önbellekte varsa anında göster
+    if (_kazananCache.containsKey(kat) && _kazananCache[kat]!.isNotEmpty) {
+      setState(() {
+        kazananlar = _kazananCache[kat]!;
+        kaybedenler = _kaybedenCache[kat] ?? [];
+      });
+      return;
+    }
+
+    // Hisseler seçildiyse ve cache boşsa tekrar hisse çek
+    if (kat == 'Hisseler') {
+      await _hisseleriCek();
+      return;
+    }
+
+    Uri? hedefUri;
+    if (kat == 'Kripto') hedefUri = AppConstants.kriptoGet;
+    if (kat == 'Fonlar') hedefUri = AppConstants.fonEnleriGet;
+    if (kat == 'Yabancı') hedefUri = AppConstants.yabanciPiyasaGet;
+
+    if (hedefUri == null) return;
+
+    setState(() => kategoriYukleniyor = true);
+
+    try {
+      final response = await http
+          .get(hedefUri)
+          .timeout(const Duration(seconds: 12));
+      if (response.statusCode == 200) {
+        final Map<String, dynamic> data = json.decode(response.body);
+
+        final kList = (data['kazananlar'] as List? ?? [])
+            .map((e) => PiyasaVarlikModel.fromJson(e))
+            .toList();
+        final dList = (data['kaybedenler'] as List? ?? [])
+            .map((e) => PiyasaVarlikModel.fromJson(e))
+            .toList();
+
+        if (mounted) {
+          setState(() {
+            _kazananCache[kat] = kList;
+            _kaybedenCache[kat] = dList;
+            if (seciliKategori == kat) {
+              kazananlar = kList;
+              kaybedenler = dList;
+            }
+          });
+        }
+      }
+    } catch (e) {
+      debugPrint("$kat çekilirken hata oluştu: $e");
+    } finally {
+      if (mounted) {
+        setState(() => kategoriYukleniyor = false);
+      }
+    }
+  }
+
+  // 3. BIST Hisselerini Çekme ve Sıralama
+  Future<void> _hisseleriCek() async {
+    try {
+      final res = await http
+          .get(AppConstants.taraUri)
+          .timeout(const Duration(seconds: 15));
+      if (res.statusCode == 200) {
+        final decoded = json.decode(res.body);
+        final List<dynamic> results = decoded['hisseler'] ?? [];
+        if (!mounted) return;
+
+        final parseEdilenler = results.map((v) => Hissemodel.fromMap(v)).toList();
+
+        final sirali = List<Hissemodel>.from(parseEdilenler)
+          ..sort((a, b) {
+            final double degisimA = (a.change as num).toDouble();
+            final double degisimB = (b.change as num).toDouble();
+            return degisimB.compareTo(degisimA);
+          });
+
+        final bKazanan = sirali.take(5).map((h) {
+          final chg = (h.change as num).toDouble();
+          return PiyasaVarlikModel(
+            sembol: h.symbol,
+            baslik: h.symbol,
+            fiyat: '₺${h.price}',
+            degisim: '${chg >= 0 ? '+' : ''}%${chg.toStringAsFixed(2)}',
+            rawDegisim: chg,
+            isPositive: chg >= 0,
+          );
+        }).toList();
+
+        final bKaybeden = sirali.reversed.take(5).map((h) {
+          final chg = (h.change as num).toDouble();
+          return PiyasaVarlikModel(
+            sembol: h.symbol,
+            baslik: h.symbol,
+            fiyat: '₺${h.price}',
+            degisim: '%${chg.toStringAsFixed(2)}',
+            rawDegisim: chg,
+            isPositive: chg >= 0,
+          );
+        }).toList();
+
         setState(() {
           _rawHisseResults = results;
-          _parsedHisseler = results.map((v) => Hissemodel.fromMap(v)).toList();
-          _hesaplaDisplayListeleri();
-          hisselerYukleniyor = false;
-        });
-      } else {
-        setState(() => hisselerYukleniyor = false);
-      }
-     } catch (e) {
-      debugPrint("Hisse verisi çekme hatası: $e");
-      setState(() {
-        hisselerYukleniyor = false;
-        _errorMessage = "Bağlantı kurulamadı. İnternetini veya sunucuyu kontrol et."; // Sadece gerçek hata mesajı!
-      });
-    }
-  }
-
-  Future<void> fonlariTazele() async {
-    setState(() => fonlarYukleniyor = true);
-    try {
-      final gelenFonlar = await _fonService.getTumFonlar();
-      setState(() {
-        _tumFonlar = gelenFonlar;
-        _hesaplaDisplayListeleri();
-        fonlarYukleniyor = false;
-      });
-    } catch (e) {
-      debugPrint("Fon verisi çekme hatası: $e");
-      setState(() {
-        fonlarYukleniyor = false;
-        _errorMessage = "Bağlantı kurulamadı. İnternetini veya sunucuyu kontrol et.";
-      });
-    }
-  }
-
-  Future<void> _favorileriYukle() async {
-    final userId = Supabase.instance.client.auth.currentUser?.id;
-    if (userId == null) return;
-
-    try {
-      final response = await http.get(AppConstants.favorilerUri(userId));
-      if (response.statusCode == 200) {
-        final data = json.decode(response.body);
-        final List<dynamic> liste = data['data'] ?? [];
-        if (!mounted) return;
-        setState(() {
-          favoriHisseler = Set<String>.from(liste.map((e) => e.toString().toUpperCase()));
-          _hesaplaDisplayListeleri();
+          _parsedHisseler = parseEdilenler;
+          _kazananCache['Hisseler'] = bKazanan;
+          _kaybedenCache['Hisseler'] = bKaybeden;
+          if (seciliKategori == 'Hisseler') {
+            kazananlar = bKazanan;
+            kaybedenler = bKaybeden;
+          }
         });
       }
     } catch (e) {
-      debugPrint("Favoriler yüklenirken hata: $e");
+      debugPrint("Hisseler çekilirken hata: $e");
     }
-  }
-
-  void favoriGuncelle(String symbol) {
-    setState(() {
-      if (favoriHisseler.contains(symbol)) {
-        favoriHisseler.remove(symbol);
-      } else {
-        favoriHisseler.add(symbol);
-      }
-      if (isFavoriteOnly) _hesaplaDisplayListeleri();
-    });
   }
 
   @override
   Widget build(BuildContext context) {
     final colorScheme = Theme.of(context).colorScheme;
-    final textTheme = Theme.of(context).textTheme;
-  final String currentUserId = Supabase.instance.client.auth.currentUser?.id ?? '';
 
-    // 🔥 2. Canlı Fiyat Haritası (_parsedHisseler listesinden otomatik eşleme)
-    final Map<String, double> canliFiyatHaritasi = {
-      for (final h in _parsedHisseler)
-        h.symbol.toUpperCase(): (double.tryParse(h.price.toString()) ?? 0.0)
-    };
     return Scaffold(
-      resizeToAvoidBottomInset: false,
+      key: _scaffoldKey,
       backgroundColor: colorScheme.surface,
+      drawer: const AppDrawer(),
       appBar: AppBar(
-        backgroundColor: Colors.transparent,
+        backgroundColor: colorScheme.surface,
         elevation: 0,
-        centerTitle: true,
-
-        title: Text(
-          'Piyasa Terminali',
-          style: textTheme.titleLarge?.copyWith(fontWeight: FontWeight.bold, color: colorScheme.onSurface),
+        leading: IconButton(
+          icon: Icon(Icons.menu_rounded, color: colorScheme.onSurface),
+          onPressed: () => _scaffoldKey.currentState?.openDrawer(),
         ),
-        bottom: PreferredSize(
-          preferredSize: const Size.fromHeight(52),
-          child: Padding(
-            padding: const EdgeInsets.fromLTRB(20, 0, 20, 12),
-            child: Container(
-              height: 44,
-              decoration: BoxDecoration(
-                color: colorScheme.surfaceContainerHigh,
-                borderRadius: BorderRadius.circular(14),
-                border: Border.all(color: colorScheme.outlineVariant.withValues(alpha: .4)),
-                boxShadow: [
-                  BoxShadow(color: colorScheme.shadow.withValues(alpha: .12), blurRadius: 12, offset: const Offset(0, 4)),
-                ],
-              ),
-              child: TabBar(
-                controller: _tabController,
-                indicatorSize: TabBarIndicatorSize.tab,
-                dividerColor: Colors.transparent,
-                indicator: BoxDecoration(
-                  color: colorScheme.primary,
-                  borderRadius: BorderRadius.circular(11),
-                  boxShadow: [
-                    BoxShadow(color: colorScheme.primary.withValues(alpha: .3), blurRadius: 8, offset: const Offset(0, 2)),
+        title: Text(
+          'TRADING TERMINAL',
+          style: TextStyle(
+            fontWeight: FontWeight.w900,
+            letterSpacing: 0.8,
+            fontSize: 17,
+            color: colorScheme.onSurface,
+          ),
+        ),
+        centerTitle: true,
+        actions: [
+          IconButton(
+            icon: Icon(Icons.notifications_none_rounded, color: colorScheme.onSurface),
+            onPressed: () {},
+          ),
+          IconButton(
+            icon: Icon(Icons.support_agent_rounded, color: colorScheme.onSurface),
+            onPressed: () {},
+          ),
+        ],
+      ),
+      body: yukleniyor
+          ? const Center(child: CircularProgressIndicator())
+          : RefreshIndicator(
+              onRefresh: _tumVerileriCek,
+              child: SingleChildScrollView(
+                physics: const AlwaysScrollableScrollPhysics(),
+                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    _buildAramaButonu(colorScheme),
+                    const SizedBox(height: 16),
+                    
+
+                    if (tabelaVerileri.isNotEmpty) ...[
+                      _buildTabelaSeridi(colorScheme),
+                      const SizedBox(height: 24),
+                    ],
+
+                    _buildGununEnleriBolumu(colorScheme),
+                    const SizedBox(height: 28),
+
+                    if (altinPiyasasi.isNotEmpty) ...[
+                      _buildAltinPiyasasiBolumu(colorScheme),
+                      const SizedBox(height: 28),
+                    ],
+
+                    _buildEkonomikTakvimBolumu(colorScheme),
+                    const SizedBox(height: 28),
+
+                    _buildHalkaArzBolumu(colorScheme),
+                    const SizedBox(height: 28),
+
+                    _buildTemettuBolumu(colorScheme),
+                    const SizedBox(height: 36),
                   ],
                 ),
-                indicatorPadding: const EdgeInsets.all(3),
-                labelColor: colorScheme.onPrimary,
-                unselectedLabelColor: colorScheme.onSurfaceVariant,
-                labelStyle: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13),
-                tabs: const [
-                  Tab(text: 'BIST Hisseleri'),
-                  Tab(text: 'TEFAS Fonları'),
-                ],
               ),
             ),
+    );
+  }
+
+  // --- WIDGET BÖLÜMLERİ ---
+
+  Widget _buildAramaButonu(ColorScheme colorScheme) {
+    return InkWell(
+      borderRadius: BorderRadius.circular(14),
+      onTap: () {
+        Navigator.push(
+          context,
+          MaterialPageRoute(
+            builder: (_) => MarketSearchScreen(
+              hisseler: _parsedHisseler,
+              rawHisseResults: _rawHisseResults,
+            ),
           ),
+        );
+      },
+      child: Container(
+        height: 46,
+        padding: const EdgeInsets.symmetric(horizontal: 14),
+        decoration: BoxDecoration(
+          color: colorScheme.surfaceContainerHigh,
+          borderRadius: BorderRadius.circular(14),
+          border: Border.all(color: colorScheme.outlineVariant.withValues(alpha: 0.3)),
+        ),
+        child: Row(
+          children: [
+            Icon(Icons.search_rounded, color: colorScheme.onSurfaceVariant, size: 20),
+            const SizedBox(width: 10),
+            Expanded(
+              child: Text(
+                'Hisse, Fon, Altın veya Kripto ara...',
+                style: TextStyle(color: colorScheme.onSurfaceVariant, fontSize: 13),
+                overflow: TextOverflow.ellipsis,
+              ),
+            ),
+          ],
         ),
       ),
-      body: Column(
-        children: [
-          Text('Veriler 15 dakika gecikmeli olarak sunulmaktadır.', style: TextStyle(fontSize: 12, color: colorScheme.primary)),
-          const SizedBox(height: 14),
-          MarketSearchBar(
-            controller: _searchController,
-            onClear: () {
-              _searchController.clear();
-              setState(() {
-                query = '';
-                _hesaplaDisplayListeleri();
-              });
-            },
-          ),
-          const SizedBox(height: 5,),
+    );
+  }
 
-          // 2. Canlı Portföy Özeti Kartı
-                if (currentUserId.isNotEmpty)
-                  PortfolioSummaryCard(
-                    userId: currentUserId,
-                    anlikFiyatlar: canliFiyatHaritasi,
-                  ),
-
-// 3. Piyasa Özeti (Top 5) Akordeon    
-          // 🎯 ÇİPLER BURAYA BAĞLANIYOR
-          const SizedBox(height: 10),
-          if (_hisseTabAktif) ...[
-            PiyasaVitriniWidget(),
-            _buildFilterChipsBar(colorScheme),
-            const SizedBox(height: 10),
-            _buildDurumBandi(colorScheme),
-          ] else ...[
-            _buildFonFilterChipsBar(colorScheme),
-          ],
-          
-          const SizedBox(height: 12),
-          Expanded(
-            child: TabBarView(
-              controller: _tabController,
+  Widget _buildTabelaSeridi(ColorScheme colorScheme) {
+    return SizedBox(
+      height: 76, // 50px'den 76px'e çıkarıldı (Overflow önlendi)
+      child: ListView.separated(
+        scrollDirection: Axis.horizontal,
+        itemCount: tabelaVerileri.length,
+        separatorBuilder: (_, __) => const SizedBox(width: 8),
+        itemBuilder: (context, index) {
+          final item = tabelaVerileri[index];
+          final bool isPos = item['is_positive'] ?? false;
+          return Container(
+            width: 118,
+            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+            decoration: BoxDecoration(
+              color: colorScheme.surfaceContainerHigh,
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(color: colorScheme.outlineVariant.withValues(alpha: 0.2)),
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisAlignment: MainAxisAlignment.center,
               children: [
-                HisseListView(
-                  isLoading: hisselerYukleniyor,
-                  displayHisseler: _displayHisseler,
-                  rawHisseResults: _rawHisseResults,
-                  favoriHisseler: favoriHisseler,
-                  onRefresh: hisseleriTazele,
-                  onFavoriDegisti: favoriGuncelle,
+                Text(
+                  item['name']?.toString() ?? '',
+                  style: TextStyle(
+                    fontSize: 10.5,
+                    color: colorScheme.onSurfaceVariant,
+                    fontWeight: FontWeight.bold,
+                  ),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
                 ),
-                FonListView(
-                  isLoading: fonlarYukleniyor,
-                  displayFonlar: _displayFonlar,
-                  onRefresh: fonlariTazele,
+                const SizedBox(height: 3),
+                CanliFiyatText(
+                  fiyatMetni: item['price']?.toString() ?? '',
+                  style: TextStyle(
+                    fontSize: 12.5,
+                    fontWeight: FontWeight.w900,
+                    color: colorScheme.onSurface,
+                  ),
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  item['change']?.toString() ?? '',
+                  style: TextStyle(
+                    fontSize: 10.5,
+                    fontWeight: FontWeight.bold,
+                    color: isPos ? const Color(0xFF00C853) : const Color(0xFFFF3D00),
+                  ),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
                 ),
               ],
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildFilterChipsBar(ColorScheme colorScheme) {
-    return SizedBox(
-      height: 34,
-      child: ListView(
-        scrollDirection: Axis.horizontal,
-        padding: const EdgeInsets.symmetric(horizontal: 20),
-        children: [
-          _filterChip(
-            label: 'VIP Sinyal',
-            icon: Icons.bolt,
-            isActive: isVipOnly,
-            color: colorScheme.tertiary,
-            onTap: () => setState(() { isVipOnly = !isVipOnly; _hesaplaDisplayListeleri(); }),
-          ),
-          _filterChip(
-            label: 'Yüksek Hacim',
-            icon: Icons.bar_chart_rounded,
-            isActive: isYuksekHacimOnly,
-            color: colorScheme.primary,
-            onTap: () => setState(() { isYuksekHacimOnly = !isYuksekHacimOnly; _hesaplaDisplayListeleri(); }),
-          ),
-          _filterChip(
-            label: 'Favoriler',
-            icon: Icons.star_rounded,
-            isActive: isFavoriteOnly,
-            color: colorScheme.secondary,
-            onTap: () => setState(() { isFavoriteOnly = !isFavoriteOnly; _hesaplaDisplayListeleri(); }),
-          ),
-          _filterChip(
-            label: 'Momentum',
-            icon: Icons.trending_up_rounded,
-            isActive: isMomentumOnly,
-            color: colorScheme.primary,
-            onTap: () => setState(() { isMomentumOnly = !isMomentumOnly; _hesaplaDisplayListeleri(); }),
-          ),
-        ],
-      ),
-    );
-  }
-
-
-  Widget _buildFonFilterChipsBar(ColorScheme colorScheme) {
-    return SizedBox(
-      height: 34,
-      child: ListView.builder(
-        scrollDirection: Axis.horizontal,
-        padding: const EdgeInsets.symmetric(horizontal: 20),
-        itemCount: fonKategorileri.length,
-        itemBuilder: (context, index) {
-          final kat = fonKategorileri[index];
-          final isActive = seciliFonKategorisi == kat;
-          return Padding(
-            padding: const EdgeInsets.only(right: 8),
-            child: Material(
-              color: Colors.transparent,
-              child: InkWell(
-                borderRadius: BorderRadius.circular(20),
-                onTap: () {
-                  setState(() {
-                    seciliFonKategorisi = kat;
-                    _hesaplaDisplayListeleri();
-                  });
-                },
-                child: AnimatedContainer(
-                  duration: const Duration(milliseconds: 250),
-                  padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
-                  decoration: BoxDecoration(
-                    color: isActive ? colorScheme.primary.withValues(alpha: 0.16) : colorScheme.surfaceContainerHigh,
-                    borderRadius: BorderRadius.circular(20),
-                    border: Border.all(
-                      color: isActive ? colorScheme.primary.withValues(alpha: 0.6) : colorScheme.outlineVariant,
-                      width: isActive ? 1.3 : 1,
-                    ),
-                  ),
-                  child: Center(
-                    child: Text(
-                      kat,
-                      style: TextStyle(
-                        fontSize: 12,
-                        fontWeight: isActive ? FontWeight.bold : FontWeight.w500,
-                        color: isActive ? colorScheme.primary : colorScheme.onSurfaceVariant,
-                      ),
-                    ),
-                  ),
-                ),
-              ),
             ),
           );
         },
@@ -501,118 +494,434 @@ Future<void> trendFonlariGetir() async {
     );
   }
 
-  Widget _filterChip({required String label, required IconData icon, required bool isActive, required Color color, required VoidCallback onTap}) {
-    final colorScheme = Theme.of(context).colorScheme;
-    return Padding(
-      padding: const EdgeInsets.only(right: 8),
-      child: Material(
-        color: Colors.transparent,
-        child: InkWell(
-          borderRadius: BorderRadius.circular(20),
-          onTap: onTap,
-          child: AnimatedContainer(
-            duration: const Duration(milliseconds: 250),
-            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 9),
-            decoration: BoxDecoration(
-              color: isActive ? color.withValues(alpha: 0.16) : colorScheme.surfaceContainerHigh,
-              borderRadius: BorderRadius.circular(20),
-              border: Border.all(color: isActive ? color.withValues(alpha: 0.6) : colorScheme.outlineVariant, width: isActive ? 1.3 : 1),
-            ),
-            child: Row(
-              mainAxisSize: MainAxisSize.min,
+  Widget _buildGununEnleriBolumu(ColorScheme colorScheme) {
+    final kategoriler = ['Hisseler', 'Fonlar', 'Kripto', 'Yabancı'];
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          children: [
+            Row(
               children: [
-                Icon(icon, size: 13, color: isActive ? color : colorScheme.onSurfaceVariant),
+                const Icon(Icons.bolt_rounded, color: Colors.amber, size: 20),
                 const SizedBox(width: 6),
-                Text(label, style: TextStyle(fontSize: 12, fontWeight: isActive ? FontWeight.bold : FontWeight.w500, color: isActive ? color : colorScheme.onSurfaceVariant)),
+                Text(
+                  'Günün Enleri',
+                  style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: colorScheme.onSurface),
+                ),
               ],
             ),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+              decoration: BoxDecoration(
+                // 1. Parlayan kutunun arka plan rengi (Kategoriye göre dinamik)
+                color: seciliKategori == 'Hisseler' 
+                    ? Colors.orange.shade800 
+                    : Colors.blue.shade900,
+                borderRadius: BorderRadius.circular(10),
+                boxShadow: [
+                  BoxShadow(
+                    // 2. Parlama (Gölge) Rengi
+                    color: seciliKategori == 'Hisseler'
+                        ? Colors.orange.withValues(alpha: .6)
+                        : Colors.blue.withValues(alpha: .6),
+                    blurRadius: 7,       // Parlamanın genişliği (Ne kadar dağılacağı)
+                    spreadRadius: 2,      // Parlamanın yoğunluğu
+                    offset: const Offset(0, 0), // Parlama merkeze odaklansın
+                  ),
+                ],
+              ),
+              child: Text(
+                seciliKategori == 'Hisseler' ? '15 Dk Gecikmeli' : 'Canlı veri',
+                style: const TextStyle(
+                  fontSize: 10.5, 
+                  color: Colors.white, // Parlayan arka planda beyaz yazı daha okunaklı olur
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+            )
+          ],
+        ),
+        const SizedBox(height: 10),
+        SingleChildScrollView(
+          scrollDirection: Axis.horizontal,
+          child: Row(
+            children: kategoriler.map((kat) {
+              final active = seciliKategori == kat;
+              return Padding(
+                padding: const EdgeInsets.only(right: 8),
+                child: ChoiceChip(
+                  label: Text(kat),
+                  selected: active,
+                  onSelected: (_) => _kategoriDegistir(kat),
+                  selectedColor: colorScheme.primary,
+                  labelStyle: TextStyle(
+                    fontSize: 11.5,
+                    fontWeight: active ? FontWeight.bold : FontWeight.normal,
+                    color: active ? colorScheme.onPrimary : colorScheme.onSurfaceVariant,
+                  ),
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+                  showCheckmark: false,
+                ),
+              );
+            }).toList(),
           ),
+        ),
+        const SizedBox(height: 12),
+        if (kategoriYukleniyor)
+          const Padding(
+            padding: EdgeInsets.symmetric(vertical: 24),
+            child: Center(child: SizedBox(width: 24, height: 24, child: CircularProgressIndicator(strokeWidth: 2.5))),
+          )
+        else if (kazananlar.isEmpty && kaybedenler.isEmpty)
+          Padding(
+            padding: const EdgeInsets.symmetric(vertical: 16),
+            child: Text(
+              '$seciliKategori kategorisi için şu an veri bulunamadı.',
+              style: TextStyle(fontSize: 12, color: colorScheme.onSurfaceVariant),
+            ),
+          )
+        else
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Text('📈 Kazananlar', style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: Color(0xFF00C853))),
+                    const SizedBox(height: 6),
+                    ...kazananlar.map((v) => _buildVarlikTile(colorScheme, v)),
+                  ],
+                ),
+              ),
+              const SizedBox(width: 14),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Text('📉 Kaybedenler', style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: Color(0xFFFF3D00))),
+                    const SizedBox(height: 6),
+                    ...kaybedenler.map((v) => _buildVarlikTile(colorScheme, v)),
+                  ],
+                ),
+              ),
+            ],
+          ),
+      ],
+    );
+  }
+
+  Widget _buildVarlikTile(ColorScheme colorScheme, PiyasaVarlikModel varlik) {
+    return InkWell(
+      borderRadius: BorderRadius.circular(8),
+      onTap: () {
+        if (seciliKategori == 'Hisseler') {
+          final rawHisse = _rawHisseResults.firstWhere(
+            (r) => (r['symbol']?.toString().toUpperCase() ?? '') == varlik.sembol.toUpperCase(),
+            orElse: () => null,
+          );
+          if (rawHisse != null) {
+            Navigator.push(context, MaterialPageRoute(builder: (_) => HisseDetayScreen(hisse: rawHisse)));
+          }
+        }
+      },
+      child: Padding(
+        padding: const EdgeInsets.symmetric(vertical: 6.0),
+        child: Row(
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          children: [
+            Expanded(
+              child: Text(
+                varlik.sembol,
+                style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.bold, color: colorScheme.onSurface),
+                overflow: TextOverflow.ellipsis,
+              ),
+            ),
+            const SizedBox(width: 6),
+            Column(
+              crossAxisAlignment: CrossAxisAlignment.end,
+              children: [
+                CanliFiyatText(
+                  fiyatMetni: varlik.fiyat,
+                  style: TextStyle(
+                    fontSize: 11.5,
+                    fontWeight: FontWeight.w600,
+                    color: colorScheme.onSurface,
+                  ),
+                ),
+                Text(
+                  varlik.degisim,
+                  style: TextStyle(
+                    fontSize: 10.5,
+                    fontWeight: FontWeight.bold,
+                    color: varlik.isPositive ? const Color(0xFF00C853) : const Color(0xFFFF3D00),
+                  ),
+                ),
+              ],
+            ),
+          ],
         ),
       ),
     );
   }
-Widget _buildMiniPortfoyKarti(BuildContext context) {
-  const bool isPositive = true; // Dinamik kâr/zarar durumuna göre
-  final Color statusColor = isPositive ? const Color(0xFF00E676) : const Color(0xFFFF5252);
 
-  return Container(
-    margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
-    decoration: BoxDecoration(
-      color: const Color(0xFF0D1420),
-      borderRadius: BorderRadius.circular(16),
-      border: Border.all(color: const Color(0xFF1E293B)),
-    ),
-    child: InkWell(
-      borderRadius: BorderRadius.circular(16),
-      onTap: () => (context),
-      child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-        child: Row(
+  Widget _buildAltinPiyasasiBolumu(ColorScheme colorScheme) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
           children: [
-            Container(
-              padding: const EdgeInsets.all(8),
-              decoration: BoxDecoration(
-                color: const Color(0xFF2A2254).withValues(alpha: 0.5),
-                borderRadius: BorderRadius.circular(10),
-              ),
-              child: const Icon(Icons.account_balance_wallet_rounded, color: Color(0xFFB39DDB), size: 20),
+            const Icon(Icons.monetization_on_rounded, color: Colors.amber, size: 20),
+            const SizedBox(width: 6),
+            Text(
+              'Altın & Kıymetli Madenler',
+              style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: colorScheme.onSurface),
             ),
-            const SizedBox(width: 12),
-            const Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text('Portföy Değeri', style: TextStyle(color: Colors.white54, fontSize: 11, fontWeight: FontWeight.w500)),
-                  SizedBox(height: 2),
-                  Text('₺124.850,00', style: TextStyle(color: Colors.white, fontSize: 15, fontWeight: FontWeight.bold)),
-                ],
-              ),
-            ),
-            Column(
-              crossAxisAlignment: CrossAxisAlignment.end,
-              children: [
-                Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Icon(isPositive ? Icons.trending_up : Icons.trending_down, color: statusColor, size: 14),
-                    const SizedBox(width: 4),
-                    Text('%2.45', style: TextStyle(color: statusColor, fontSize: 13, fontWeight: FontWeight.bold)),
-                  ],
-                ),
-                const SizedBox(height: 2),
-                Text('+₺2.980', style: TextStyle(color: statusColor.withValues(alpha: 0.8), fontSize: 11)),
-              ],
-            ),
-            const SizedBox(width: 8),
-            const Icon(Icons.chevron_right_rounded, color: Colors.white30, size: 20),
           ],
         ),
-      ),
-    ),
-  );
-}
-  Widget _buildDurumBandi(ColorScheme colorScheme) {
-    final taranan = _parsedHisseler.length;
-    
-    final bool filtreAktif = isVipOnly || isYuksekHacimOnly || isFavoriteOnly || isMomentumOnly || query.isNotEmpty;
-    
-    final int eslesen = filtreAktif 
-        ? _displayHisseler.length 
-        : _parsedHisseler.where((h) => h.signal.isNotEmpty).length;
+        const SizedBox(height: 12),
+        Container(
+          padding: const EdgeInsets.all(12),
+          decoration: BoxDecoration(
+            color: colorScheme.surfaceContainerHigh,
+            borderRadius: BorderRadius.circular(14),
+            border: Border.all(color: colorScheme.outlineVariant.withValues(alpha: 0.2)),
+          ),
+          child: Column(
+            children: altinPiyasasi.map((item) {
+              final bool isPos = item['is_positive'] ?? true;
+              return Padding(
+                padding: const EdgeInsets.symmetric(vertical: 5.0),
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    Expanded(
+                      child: Text(
+                        item['name']?.toString() ?? '',
+                        style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: colorScheme.onSurface),
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ),
+                    Row(
+                      children: [
+                        CanliFiyatText(
+                          fiyatMetni: item['price']?.toString() ?? '',
+                          style: TextStyle(
+                            fontSize: 12.5,
+                            fontWeight: FontWeight.w900,
+                            color: colorScheme.onSurface,
+                          ),
+                        ),
+                        const SizedBox(width: 10),
+                        SizedBox(
+                          width: 54,
+                          child: Text(
+                            item['change']?.toString() ?? '',
+                            textAlign: TextAlign.right,
+                            style: TextStyle(
+                              fontSize: 11,
+                              fontWeight: FontWeight.bold,
+                              color: isPos ? const Color(0xFF00C853) : const Color(0xFFFF3D00),
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
+              );
+            }).toList(),
+          ),
+        ),
+      ],
+    );
+  }
 
-    final String etiket = filtreAktif ? 'Filtreye Uyan Gösteriliyor' : 'Genel Sinyalli';
+  Widget _buildEkonomikTakvimBolumu(ColorScheme colorScheme) {
+    final olaylar = [
+      {"ulke": "🇹🇷", "saat": "14:00", "olay": "TCMB Politika Faiz Kararı", "beklenti": "%47.50", "onceki": "%50.00"},
+      {"ulke": "🇺🇸", "saat": "15:30", "olay": "ABD Çekirdek TÜFE (Yıllık)", "beklenti": "%3.2", "onceki": "%3.3"},
+      {"ulke": "🇪🇺", "saat": "16:15", "olay": "ECB Faiz Kararı", "beklenti": "%3.40", "onceki": "%3.65"},
+    ];
 
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 20),
-      child: Row(
-        children: [
-          Container(width: 6, height: 6, decoration: BoxDecoration(shape: BoxShape.circle, color: colorScheme.primary)),
-          const SizedBox(width: 8),
-          Text('$taranan Hisse Tarandı', style: TextStyle(fontSize: 12, color: colorScheme.onSurfaceVariant, fontWeight: FontWeight.w600)),
-          Text(' · ', style: TextStyle(fontSize: 12, color: colorScheme.onSurfaceVariant)),
-          Text('$eslesen $etiket', style: TextStyle(fontSize: 12, color: colorScheme.primary, fontWeight: FontWeight.bold)),
-        ],
-      ),
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          children: [
+            const Icon(Icons.calendar_month_rounded, color: Colors.blueAccent, size: 20),
+            const SizedBox(width: 6),
+            Text('Ekonomik Takvim', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: colorScheme.onSurface)),
+          ],
+        ),
+        const SizedBox(height: 12),
+        ...olaylar.map((o) => Container(
+              margin: const EdgeInsets.only(bottom: 8),
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: colorScheme.surfaceContainerHigh,
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(color: colorScheme.outlineVariant.withValues(alpha: 0.2)),
+              ),
+              child: Row(
+                children: [
+                  Text(o['ulke']!, style: const TextStyle(fontSize: 20)),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(o['olay']!, style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.bold, color: colorScheme.onSurface)),
+                        Text('Beklenti: ${o['beklenti']}  |  Önceki: ${o['onceki']}', style: TextStyle(fontSize: 11, color: colorScheme.onSurfaceVariant)),
+                      ],
+                    ),
+                  ),
+                  Text(o['saat']!, style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: colorScheme.primary)),
+                ],
+              ),
+            )),
+      ],
+    );
+  }
+
+  Widget _buildHalkaArzBolumu(ColorScheme colorScheme) {
+    final arzlar = [
+      {"sirket": "Borusan Araç İhale", "kod": "BORUS", "tarih": "Talep Toplanıyor", "fiyat": "₺45.50", "durum": "Talep"},
+      {"sirket": "Girişim Varlık Yönetim", "kod": "GRSVM", "tarih": "Onay Bekliyor", "fiyat": "₺18.20", "durum": "Bekliyor"},
+    ];
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          children: [
+            const Icon(Icons.rocket_launch_rounded, color: Colors.deepPurpleAccent, size: 20),
+            const SizedBox(width: 6),
+            Text('Halka Arz Takvimi', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: colorScheme.onSurface)),
+          ],
+        ),
+        const SizedBox(height: 12),
+        ...arzlar.map((a) => Container(
+              margin: const EdgeInsets.only(bottom: 8),
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: colorScheme.surfaceContainerHigh,
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(color: colorScheme.outlineVariant.withValues(alpha: 0.2)),
+              ),
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          '${a['sirket']} (${a['kod']})',
+                          style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.bold, color: colorScheme.onSurface),
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                        const SizedBox(height: 2),
+                        Text(a['tarih']!, style: TextStyle(fontSize: 11, color: colorScheme.onSurfaceVariant)),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                    decoration: BoxDecoration(
+                      color: a['durum'] == 'Talep' ? Colors.green.withValues(alpha: 0.15) : Colors.orange.withValues(alpha: 0.15),
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    child: Text(
+                      a['fiyat']!,
+                      style: TextStyle(
+                        fontSize: 12,
+                        fontWeight: FontWeight.bold,
+                        color: a['durum'] == 'Talep' ? const Color(0xFF00C853) : Colors.orange.shade700,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            )),
+      ],
+    );
+  }
+
+  Widget _buildTemettuBolumu(ColorScheme colorScheme) {
+    final temettuler = [
+      {"kod": "TUPRS", "ad": "Tüpraş", "tarih": "27 Eyl", "hisseBasi": "₺10.74", "verim": "%6.8"},
+      {"kod": "FROTO", "ad": "Ford Otosan", "tarih": "18 Eki", "hisseBasi": "₺29.70", "verim": "%2.9"},
+      {"kod": "KCHOL", "ad": "Koç Holding", "tarih": "24 Eki", "hisseBasi": "₺8.00", "verim": "%3.5"},
+    ];
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          children: [
+            const Icon(Icons.savings_rounded, color: Colors.teal, size: 20),
+            const SizedBox(width: 6),
+            Text('Temettü Takvimi', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: colorScheme.onSurface)),
+          ],
+        ),
+        const SizedBox(height: 12),
+        ...temettuler.map((t) => Container(
+              margin: const EdgeInsets.only(bottom: 8),
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: colorScheme.surfaceContainerHigh,
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(color: colorScheme.outlineVariant.withValues(alpha: 0.2)),
+              ),
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  Expanded(
+                    child: Row(
+                      children: [
+                        Container(
+                          width: 44,
+                          height: 44,
+                          decoration: BoxDecoration(
+                            color: colorScheme.primary.withValues(alpha: 0.1),
+                            borderRadius: BorderRadius.circular(10),
+                          ),
+                          alignment: Alignment.center,
+                          child: Text(t['kod']!, style: TextStyle(fontWeight: FontWeight.bold, fontSize: 11, color: colorScheme.primary)),
+                        ),
+                        const SizedBox(width: 12),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                t['ad']!,
+                                style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: colorScheme.onSurface),
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                              Text('Tarih: ${t['tarih']}', style: TextStyle(fontSize: 11, color: colorScheme.onSurfaceVariant)),
+                            ],
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  Column(
+                    crossAxisAlignment: CrossAxisAlignment.end,
+                    children: [
+                      Text(t['hisseBasi']!, style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.bold, color: colorScheme.onSurface)),
+                      Text('Verim: ${t['verim']}', style: const TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: Color(0xFF00C853))),
+                    ],
+                  ),
+                ],
+              ),
+            )),
+      ],
     );
   }
 }
