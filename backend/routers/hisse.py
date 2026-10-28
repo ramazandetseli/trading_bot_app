@@ -54,35 +54,6 @@ def stratejik_tarama(mode: str):
 
     return {"islem_durumu": "basarili", "hisseler": filtrelenmis}
 
-@router.get("/endeksler")
-def get_tv_indices():
-    url = "https://scanner.tradingview.com/global/scan"
-    payload = {
-        "symbols": {"tickers": ["BIST:XU100", "BIST:XU030", "BIST:XU500", "FX_IDC:USDTRY", "FX_IDC:EURTRY"], "query": {"types": []}},
-        "columns": ["close", "change"]
-    }
-    
-    try:
-        response = requests.post(url, json=payload, timeout=10)
-        results = []
-        for item in response.json().get('data', []):
-            sembol = item['s']
-            price = item['d'][0]
-            change = item['d'][1]
-            
-            if "XU100" in sembol: endeks_adi = "BIST 100"
-            elif "XU030" in sembol: endeks_adi = "BIST 30"
-            elif "XU500" in sembol: endeks_adi = "BIST 500"
-            elif "USDTRY" in sembol: endeks_adi = "DOLAR / TL"
-            elif "EURTRY" in sembol: endeks_adi = "EURO / TL"
-            else: continue
-            
-            formatted_price = f"{price:.2f}" if "TRY" in sembol else f"{price:,.0f}"
-            results.append({"name": endeks_adi, "price": formatted_price, "change": f"{'+' if change > 0 else ''}{change:.2f}"})
-            
-        return {"islem_durumu": "basarili", "veriler": results}
-    except Exception as e:
-        return {"islem_durumu": "hata", "veriler": []}
 
 @router.get("/tarihsel/{symbol}")
 def get_hisse_tarihsel(symbol: str, period: str = "1mo"):

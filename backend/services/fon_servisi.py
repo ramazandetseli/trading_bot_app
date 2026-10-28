@@ -118,7 +118,6 @@ def fetch_fon_tipi(fon_kodu: str):
         return {"islem_durumu": "basarili", "fon_kodu": fon_kodu.upper(), "fon_tipi_kodu": fon_tip_kodu, "fon_tipi_aciklama": FON_TIP_ACIKLAMA.get(fon_tip_kodu, "Diğer Fon")}
     except Exception as e:
         return {"islem_durumu": "hata", "mesaj": str(e)}
-
 def fetch_one_cikanlar():
     simdi = time.time()
     if FON_TREND_CACHE["data"] and (simdi - FON_TREND_CACHE["son_guncelleme"] < CACHE_SURESI_SANIYE):
@@ -136,15 +135,32 @@ def fetch_one_cikanlar():
 
         result_list = response.json().get("resultList", [])
         islenmis_fonlar = []
+        
+        # --- GÜNCELLEME: TEFAS API YANIT YAPISI DEĞİŞTİ ---
         for item in result_list:
-            kod, unvan = item.get("fonKodu") or item.get("kod"), item.get("fonUnvan") or item.get("unvan")
-            getiri_ham = item.get("getiri") or item.get("fonGetiri") or item.get("getiriOran") or 0.0
-            kategori = item.get("fonTuruAciklama") or item.get("kategori") or "Yatırım Fonu"
-            if kod and unvan:
-                try:
-                    islenmis_fonlar.append({"kod": kod.strip().upper(), "unvan": unvan.strip(), "getiri_haftalik": round(float(str(getiri_ham).replace(",", ".")), 2), "kategori": kategori})
-                except (ValueError, TypeError):
-                    continue
+            kategori = item.get("fonTurAciklama") or item.get("kategori") or "Yatırım Fonu"
+            obje1_list = item.get("obje1List", [])
+            
+            for obje in obje1_list:
+                fon_data = obje.get("data", [])
+                for fon in fon_data:
+                    kod = fon.get("name")      # Yeni yapıda fon kodu 'name' alanında
+                    unvan = fon.get("id")      # Yeni yapıda fon unvanı 'id' alanında
+                    getiri_ham = fon.get("y")  # Yeni yapıda getiri 'y' alanında
+                    
+                    if kod and unvan and getiri_ham is not None:
+                        try:
+                            islenmis_fonlar.append({
+                                "kod": str(kod).strip().upper(),
+                                "unvan": str(unvan).strip(),
+                                "getiri_haftalik": round(float(getiri_ham), 2),
+                                "kategori": kategori
+                            })
+                        except (ValueError, TypeError):
+                            continue
+
+        if not islenmis_fonlar:
+            return {"islem_durumu": "hata", "mesaj": "TEFAS API'den fon verisi alınamadı (liste boş)."}
 
         islenmis_fonlar.sort(key=lambda x: x["getiri_haftalik"], reverse=True)
         haftanin_yukselenleri = islenmis_fonlar[:10]
@@ -160,9 +176,8 @@ def fetch_one_cikanlar():
         return {"islem_durumu": "basarili", "kaynak": "canli", **trend_data}
     except Exception as e:
         return {"islem_durumu": "hata", "mesaj": str(e)}
-
-
 # --- FVT SERVİSİ ---
+
 
 def fetch_fvt_portfoy(fon_kodu: str):
     fon_kodu = fon_kodu.strip().upper()
@@ -252,7 +267,6 @@ def fetch_fvt_portfoy(fon_kodu: str):
     except Exception as e:
         return {"islem_durumu": "hata", "mesaj": str(e)}
 
-
 # --- TAHMİN MOTORU ---
 TAHMIN_CACHE = {}
 CACHE_SURESI_SN = 30 
@@ -292,6 +306,9 @@ def fetch_fon_tahmini(fon_kodu: str):
         } for h in hisseler
     }
     
+    art_list = []
+    az_list = []
+
     try:
         data = yf.download(semboller, period="5d", progress=False)
         
@@ -321,115 +338,20 @@ def fetch_fon_tahmini(fon_kodu: str):
                     hesaplanan_hisseler[sembol_saf]["katki"] = round(fona_katkisi, 4)
             except Exception:
                 continue 
-                
-    except Exception:
-        pass 
 
-    detay_listesi = list(hesaplanan_hisseler.values())
-    
-    # Günlük getirisi pozitif olan hisseler (büyükten küçüğe sıralı)
-    art_list = sorted(
-        [h["symbol"] for h in detay_listesi if h["hisse_getirisi"] > 0], 
-        key=lambda x: next(item["hisse_getirisi"] for item in detay_listesi if item["symbol"] == x), 
-        reverse=True
-    )
-                    
-    # Günlük getirisi negatif olan hisseler (küçükten büyüğe sıralı)
-    az_list = sorted(
-        [h["symbol"] for h in detay_listesi if h["hisse_getirisi"] < 0], 
-        key=lambda x: next(item["hisse_getirisi"] for item in detay_listesi if item["symbol"] == x)
-    )
-
-    sonuc = {
-        "islem_durumu": "basarili",
-        "fon_kodu": fon_kodu,
-        "tahmini_getiri": round(toplam_katki, 2),
-        "detaylar": detay_listesi,
-        "artanlar": art_list[:5],
-        "azalanlar": az_list[:5],
-        "eklenenler": [], 
-        "cikanlar": []
-    }
-    
-    TAHMIN_CACHE[fon_kodu] = {
-        "zaman": simdi,
-        "veri": sonuc
-    }
-    
-    return sonuc
-
-# --- TAHMİN MOTORU ---
-TAHMIN_CACHE = {}
-CACHE_SURESI_SN = 30 
-
-def fetch_fon_tahmini(fon_kodu: str):
-    fon_kodu = fon_kodu.strip().upper()
-    simdi = time.time()
-
-    
-    
-    if fon_kodu in TAHMIN_CACHE:
-        gecen_sure = simdi - TAHMIN_CACHE[fon_kodu]["zaman"]
-        if gecen_sure < CACHE_SURESI_SN:
-            return TAHMIN_CACHE[fon_kodu]["veri"]
-            
-    portfoy_verisi = fetch_fvt_portfoy(fon_kodu)
-    if portfoy_verisi.get("islem_durumu") != "basarili" or not portfoy_verisi.get("portfoy_listesi"):
-        return {"islem_durumu": "hata", "mesaj": "Portföy listesi alınamadı veya boş."}
+        detay_listesi = list(hesaplanan_hisseler.values())
         
-    hisseler = portfoy_verisi["portfoy_listesi"]
-    
-    yabanci_listesi = ["MSFT", "NVDA", "AAPL", "GOOGL", "AMZN", "META", "TSLA", "AMD", "NFLX", "INTC"]
-    semboller = []
-    for h in hisseler:
-        sym = h['symbol'].strip().upper()
-        if sym in yabanci_listesi:
-            semboller.append(sym)
-        else:
-            semboller.append(f"{sym}.IS" if not sym.endswith(".IS") else sym)
-    
-    toplam_katki = 0.0
-    
-    hesaplanan_hisseler = {
-        h["symbol"]: {
-            "symbol": h["symbol"], 
-            "weight": h["weight"], 
-            "hisse_getirisi": 0.0, 
-            "katki": 0.0
-        } for h in hisseler
-    }
-    
-    try:
-        # 🔥 YFINANCE ÇÖKME KORUMASI VE 5 GÜNLÜK VERİ (GERİ GETİRİLDİ!)
-        data = yf.download(semboller, period="5d", progress=False)
-        
-        for hisse_obj in hisseler:
-            sembol_saf = hisse_obj["symbol"].strip().upper()
-            sembol_yf = sembol_saf if sembol_saf in yabanci_listesi else f"{sembol_saf}.IS"
-            agirlik = hisse_obj["weight"]
-            
-            try:
-                # MultiIndex ve Series koruması
-                if len(semboller) == 1:
-                    kapanislar = data['Close']
-                else:
-                    kapanislar = data['Close'][sembol_yf]
-                    
-                kapanislar = kapanislar.dropna()
-                
-                if len(kapanislar) >= 2:
-                    dunku_kapanis = float(kapanislar.iloc[-2])
-                    anlik_fiyat = float(kapanislar.iloc[-1])
-                    
-                    hisse_getirisi = ((anlik_fiyat - dunku_kapanis) / dunku_kapanis) * 100
-                    fona_katkisi = (hisse_getirisi * agirlik) / 100
-                    
-                    toplam_katki += fona_katkisi
-                    
-                    hesaplanan_hisseler[sembol_saf]["hisse_getirisi"] = round(hisse_getirisi, 2)
-                    hesaplanan_hisseler[sembol_saf]["katki"] = round(fona_katkisi, 4)
-            except Exception:
-                continue 
+        # Döngü bittikten sonra tüm liste üzerinden sıralama yapılıyor
+        art_list = sorted(
+            [h["symbol"] for h in detay_listesi if h["hisse_getirisi"] > 0], 
+            key=lambda x: next(item["hisse_getirisi"] for item in detay_listesi if item["symbol"] == x), 
+            reverse=True
+        )
+                        
+        az_list = sorted(
+            [h["symbol"] for h in detay_listesi if h["hisse_getirisi"] < 0], 
+            key=lambda x: next(item["hisse_getirisi"] for item in detay_listesi if item["symbol"] == x)
+        )
 
         print(f"DEBUG {fon_kodu} -> Artanlar: {art_list[:5]}, Azalanlar: {az_list[:5]}")
                 
@@ -441,8 +363,8 @@ def fetch_fon_tahmini(fon_kodu: str):
         "fon_kodu": fon_kodu,
         "tahmini_getiri": round(toplam_katki, 2),
         "detaylar": list(hesaplanan_hisseler.values()),
-        "artanlar": portfoy_verisi.get("artanlar", []),
-        "azalanlar": portfoy_verisi.get("azalanlar", []),
+        "artanlar": art_list[:5],
+        "azalanlar": az_list[:5],
         "eklenenler": portfoy_verisi.get("eklenenler", []),
         "cikanlar": portfoy_verisi.get("cikanlar", [])
     }
@@ -453,7 +375,6 @@ def fetch_fon_tahmini(fon_kodu: str):
     }
     
     return sonuc
-
 
 def fetch_fon_vitrini():
     simdi = time.time()
@@ -495,3 +416,6 @@ def fetch_fon_vitrini():
     except Exception as e:
         print("VİTRİN HATA:", str(e))
         return {"islem_durumu": "hata", "mesaj": str(e)}
+
+
+

@@ -17,9 +17,10 @@ class AppConstants {
   static Uri get endekslerUri => Uri.parse("$baseUrl/api/hisse/endeksler");
 
   // --- HİSSE DETAY & GEÇMİŞ VERİ (/api/hisse) ---
-static Uri hisseTarihselUri(String symbol, String period) =>
-    Uri.parse("$baseUrl/api/hisse/tarihsel/${symbol.toUpperCase()}?period=$period");   
-    static Uri get hisseIstatistikUri => Uri.parse("$baseUrl/api/hisse/gunluk-istatistikler");
+  static Uri hisseTarihselUri(String symbol, String period) =>
+      Uri.parse("$baseUrl/api/hisse/tarihsel/${symbol.toUpperCase()}?period=$period");
+  static Uri get hisseIstatistikUri => Uri.parse("$baseUrl/api/hisse/gunluk-istatistikler");
+
   // --- YAPAY ZEKA ANALİZ (/api/ai) ---
   static Uri hisseAnalizUri({
     required String symbol,
@@ -31,7 +32,6 @@ static Uri hisseTarihselUri(String symbol, String period) =>
       Uri.parse(
         "$baseUrl/api/ai/deep-analiz?symbol=$symbol&rsi=$rsi&vol=$vol&price=$price&change=$change",
       );
-    
 
   // --- FAVORİLER (/api/kullanici) ---
   static Uri get favoriEkleUri => Uri.parse("$baseUrl/api/kullanici/favori-ekle");
@@ -76,4 +76,11 @@ static Uri hisseTarihselUri(String symbol, String period) =>
   static Uri get portfolioSilUri => Uri.parse("$baseUrl/api/kullanici/portfolio-sil");
   static Uri portfolioGetirUri(String userId) =>
       Uri.parse("$baseUrl/api/kullanici/portfolio/$userId");
+
+  // --- PİYASA TABELA & 
+  static Uri get piyasaGet => Uri.parse('$baseUrl/api/piyasa/endeksler');
+  static Uri get kriptoGet => Uri.parse('$baseUrl/api/piyasa/kriptolar');
+  static Uri get fonEnleriGet => Uri.parse('$baseUrl/api/piyasa/fon-enleri');
+  static Uri get yabanciPiyasaGet => Uri.parse('$baseUrl/api/piyasa/yabanci-piyasa');
+  static Uri get altinGet => Uri.parse('$baseUrl/api/piyasa/altinlar');
 }
