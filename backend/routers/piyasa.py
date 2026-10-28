@@ -87,7 +87,7 @@ async def get_altinlar_piyasasi():
 
 
 
-@router.get("/endeksler")
+@router.get("/tabela-verileri")
 async def get_piyasa_tabela():
     """
     Sadece üst yatay tabela şeridi için TradingView Scanner üzerinden
