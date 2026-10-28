@@ -78,7 +78,7 @@ class AppConstants {
       Uri.parse("$baseUrl/api/kullanici/portfolio/$userId");
 
   // --- PİYASA TABELA & 
-  static Uri get piyasaGet => Uri.parse('$baseUrl/api/piyasa/endeksler');
+  static Uri get piyasaGet => Uri.parse('$baseUrl/api/piyasa/tabela-verileri');
   static Uri get kriptoGet => Uri.parse('$baseUrl/api/piyasa/kriptolar');
   static Uri get fonEnleriGet => Uri.parse('$baseUrl/api/piyasa/fon-enleri');
   static Uri get yabanciPiyasaGet => Uri.parse('$baseUrl/api/piyasa/yabanci-piyasa');
