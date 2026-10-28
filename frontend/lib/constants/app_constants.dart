@@ -33,6 +33,9 @@ class AppConstants {
         "$baseUrl/api/ai/deep-analiz?symbol=$symbol&rsi=$rsi&vol=$vol&price=$price&change=$change",
       );
 
+  // --- QUANT PATTERN ANALİZİ (/api/analysis) ---
+  static Uri get patternAnalizUri => Uri.parse("$baseUrl/api/analysis/pattern");
+
   // --- FAVORİLER (/api/kullanici) ---
   static Uri get favoriEkleUri => Uri.parse("$baseUrl/api/kullanici/favori-ekle");
   static Uri get favoriSilUri => Uri.parse("$baseUrl/api/kullanici/favori-sil");
@@ -62,7 +65,6 @@ class AppConstants {
   static Uri get oneCikanFonlarUri => 
       Uri.parse("$baseUrl/api/fon/one-cikanlar");
 
-  // FVT üzerinden fonun hisse dağılımını çeken rota
   static Uri fonPortfoyUri(String fonKodu) =>
       Uri.parse("$baseUrl/api/fon/portfoy/${fonKodu.toUpperCase()}");
       
@@ -77,8 +79,8 @@ class AppConstants {
   static Uri portfolioGetirUri(String userId) =>
       Uri.parse("$baseUrl/api/kullanici/portfolio/$userId");
 
-  // --- PİYASA TABELA & 
-  static Uri get piyasaGet => Uri.parse('$baseUrl/api/piyasa/tabelaVerileri');
+  // --- PİYASA TABELA & ENTEGRASYONLAR (/api/piyasa) ---
+  static Uri get piyasaGet => Uri.parse('$baseUrl/api/piyasa/tabela-verileri');
   static Uri get kriptoGet => Uri.parse('$baseUrl/api/piyasa/kriptolar');
   static Uri get fonEnleriGet => Uri.parse('$baseUrl/api/piyasa/fon-enleri');
   static Uri get yabanciPiyasaGet => Uri.parse('$baseUrl/api/piyasa/yabanci-piyasa');
