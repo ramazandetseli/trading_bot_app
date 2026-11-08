@@ -3,7 +3,7 @@ class AppConstants {
   static const bool isDevelopment = true;
 
   // Local IP (FastAPI)
-  static const String _localUrl = "http://192.168.1.114:8000";
+  static const String _localUrl = "http://192.168.1.102:8000";
 
   // Production URL (Render)
   static const String _prodUrl = "https://trading-bot-app-za72.onrender.com";
