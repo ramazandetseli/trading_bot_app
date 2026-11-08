@@ -89,15 +89,16 @@ async def get_portfolio(user_id: str):
 async def add_to_portfolio(req: PortfolioEkleRequest):
     sym = req.symbol.strip().upper()
 
-    # Temel sembol uzunluk doğrulaması
-    if not (3 <= len(sym) <= 6 and sym.isalnum()):
+    # Kriptolar (BTCUSDT: 7, AVAXUSDT: 8) ve ABD hisseleri (BRK.B) için esnek kontrol:
+    import re
+    if not (2 <= len(sym) <= 12 and re.match(r'^[A-Z0-9.-]+$', sym)):
         raise HTTPException(
             status_code=400, 
-            detail="Geçersiz sembol formatı. Sembol 3-6 karakterli olmalıdır."
+            detail="Geçersiz sembol formatı. Sembol 2-12 karakterli olmalıdır."
         )
 
     try:
-        # 1. Kullanıcının bu hissede mevcut bir kaydı var mı kontrol et
+        # 1. Kullanıcının bu varlıkta mevcut bir kaydı var mı kontrol et
         mevcut = supabase.table("portfolio") \
             .select("*") \
             .eq("user_id", req.user_id) \
@@ -109,20 +110,16 @@ async def add_to_portfolio(req: PortfolioEkleRequest):
             eski_lot = float(eski["lot_quantity"])
             eski_maliyet = float(eski["buy_price"])
 
-            # Ağırlıklı Ortalama Maliyet Formülü:
-            # Toplam Maliyet = (Eski Lot * Eski Maliyet) + (Yeni Lot * Yeni Maliyet)
             yeni_toplam_lot = eski_lot + req.lot_quantity
             yeni_ortalama_maliyet = (
                 (eski_lot * eski_maliyet) + (req.lot_quantity * req.buy_price)
             ) / yeni_toplam_lot
 
-            # Mevcut satırı güncelle
             res = supabase.table("portfolio").update({
                 "lot_quantity": yeni_toplam_lot,
                 "buy_price": round(yeni_ortalama_maliyet, 4)
             }).eq("id", eski["id"]).execute()
         else:
-            # Kullanıcıda bu sembol yoksa yeni satır aç
             veri = {
                 "user_id": req.user_id,
                 "symbol": sym,
@@ -134,6 +131,7 @@ async def add_to_portfolio(req: PortfolioEkleRequest):
         return {"status": "success", "data": res.data}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+        
 @router.post("/portfolio-sil")
 async def delete_from_portfolio(req: PortfolioSilRequest):
     try:

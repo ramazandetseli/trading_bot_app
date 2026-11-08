@@ -1,6 +1,6 @@
 class AppConstants {
   // Canlıya alırken bunu 'false' yapman yeterli
-  static const bool isDevelopment = false;
+  static const bool isDevelopment = true;
 
   // Local IP (FastAPI)
   static const String _localUrl = "http://192.168.1.114:8000";

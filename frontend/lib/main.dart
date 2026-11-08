@@ -1,9 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:onesignal_flutter/onesignal_flutter.dart';
+import 'package:trading_bot_app/portfolio/portfolio_bottom_sheet.dart';
 import 'package:trading_bot_app/screens/alarms/alarms_screen.dart';
 import 'package:trading_bot_app/screens/auth/auth_screen.dart';
 import 'package:trading_bot_app/screens/dashboard/dashboard_screen.dart';
-import 'package:trading_bot_app/screens/profile/profile_screen.dart';
 import 'package:trading_bot_app/screens/rehber/rehber_screen.dart';
 import 'package:trading_bot_app/screens/dashboard/scanner_screen.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
@@ -66,39 +66,56 @@ class MainNavigationScreen extends StatefulWidget {
 }
 
 class _MainNavigationScreenState extends State<MainNavigationScreen> {
-  
-  int _selectedIndex=0;
+  int _selectedIndex = 0;
 
-  void _onItemTapped(int index){
+  void _onItemTapped(int index) {
+    if (index == 2) {
+      // 2. index (Portföy) tıklandığında sayfayı değiştirmek yerine sheet'i aç
+      final userId = Supabase.instance.client.auth.currentUser?.id ?? '';
+      showModalBottomSheet(
+        context: context,
+        isScrollControlled: true,
+        backgroundColor: Colors.transparent,
+        builder: (ctx) => PortfolioBottomSheet(
+          userId: userId,
+          anlikFiyatlar: const {},
+        ),
+      );
+      return; // _selectedIndex'i 2 yapma, kullanıcı hangi sekmedeyse orada kalsın
+    }
+
     setState(() {
-      _selectedIndex = index; 
+      _selectedIndex = index;
     });
   }
 
-
   @override
   Widget build(BuildContext context) {
-   return Scaffold(
-    
-    body: IndexedStack(
-  index: _selectedIndex, // O an aktif olan sekme numarası
-  children: [
-    const DashboardScreen(),
-    ScannerScreen(),
-    const RehberScreen(),
-    const AlarmScreen(),
-    const SettingsScreen(),
-  ],
-),
+    // Aktif oturum açmış kullanıcının ID'sini alıyoruz
+    final String currentUserId = Supabase.instance.client.auth.currentUser?.id ?? '';
 
-    bottomNavigationBar: BottomNavigationBar(
-      items: const [
+    return Scaffold(
+      body: IndexedStack(
+        index: _selectedIndex,
+        children: [
+          const DashboardScreen(),
+          ScannerScreen(),
+          // Boş string yerine gerçek kullanıcı ID'si
+          PortfolioBottomSheet(
+            userId: currentUserId,
+            anlikFiyatlar: const {}, // Ekran içinde kendi çekiyorsa sorun yok
+          ),
+          const AlarmScreen(),
+          const RehberScreen(),
+        ],
+      ),
+      bottomNavigationBar: BottomNavigationBar(
+        items: const [
           BottomNavigationBarItem(icon: Icon(Icons.dashboard), label: 'Piyasa'),
           BottomNavigationBarItem(icon: Icon(Icons.search), label: 'Tarama'),
-          BottomNavigationBarItem(icon: Icon(Icons.info), label: 'Rehber'),
+          BottomNavigationBarItem(icon: Icon(Icons.wallet), label: 'Portföy'),
           BottomNavigationBarItem(icon: Icon(Icons.notifications), label: 'Alarmlar'),
-          BottomNavigationBarItem(icon: Icon(Icons.person), label: 'Profil'),
-
+          BottomNavigationBarItem(icon: Icon(Icons.info), label: 'Rehber'),
         ],
         currentIndex: _selectedIndex,
         onTap: _onItemTapped,
@@ -106,14 +123,6 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
         selectedItemColor: Colors.greenAccent,
         unselectedItemColor: Colors.grey,
       ),
-
-
-   );
-
-  } 
-
-  void initstate() {
-    super.initState();
-
+    );
   }
 }

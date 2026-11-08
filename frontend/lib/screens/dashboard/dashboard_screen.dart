@@ -4,11 +4,14 @@ import 'dart:math';
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 import 'package:trading_bot_app/constants/app_constants.dart';
+import 'package:trading_bot_app/constants/piyasaSaatler.dart';
 import 'package:trading_bot_app/models/hisse_model.dart';
 import 'package:trading_bot_app/models/piyasa_varlik_model.dart';
+import 'package:trading_bot_app/screens/dashboard/piyasa_saatleri_screen.dart';
 import 'package:trading_bot_app/screens/dashboard/widgets/app_drawer.dart';
 import 'package:trading_bot_app/screens/dashboard/widgets/canli_fiyat_text.dart';
 import 'package:trading_bot_app/screens/dashboard/widgets/market_search_screen.dart';
+import 'package:trading_bot_app/screens/dashboard/widgets/varlik_avatar.dart';
 import 'package:trading_bot_app/screens/hisse/stock_detail_screen.dart';
 
 class DashboardScreen extends StatefulWidget {
@@ -56,32 +59,39 @@ class _DashboardScreenState extends State<DashboardScreen> {
   }
 
   void _canliAkisiBaslat() {
-    // Her 3 saniyede bir arka planda sessizce fiyatları günceller ve parlama efektini tetikler
     _canliPiyasaTimer = Timer.periodic(const Duration(seconds: 3), (_) {
       if (!mounted || yukleniyor) return;
-      _sessizFiyatGuncelle();
+      _dinamikFiyatGuncelle();
     });
   }
 
-  /// Sayfayı loading'e sokmadan arka planda verileri yeniler ve
-  /// sabit kalan fiyatlara gerçekçi mikro-kademe (tick) hareketi uygular.
-  Future<void> _sessizFiyatGuncelle() async {
-    // 1. Gerçek API'den sessizce yeni verileri çek
-    await Future.wait([
-      _tabelaCek(),
-      _altinCek(),
-      if (seciliKategori == 'Hisseler') _hisseleriCek(),
-    ]);
+  Future<void> _dinamikFiyatGuncelle() async {
+    final bool bistAcik = PiyasaSaatleri.isBistAcik();
+    final bool forexAcik = PiyasaSaatleri.isForexAltinAcik();
+    final bool abdAcik = PiyasaSaatleri.isAbdBorsaAcik();
 
-    // 2. MİKRO-TICK SİMÜLASYONU (API fiyatı o saniye değişmemiş olsa bile
-    // ekrandaki varlıkların %35'inde binde birlik gerçekçi kademe oynaması yapar)
+    // 1. Sadece açık olan piyasaların API'sini arka planda sessizce tazele
+    final List<Future> istekler = [];
+    if (bistAcik || forexAcik) istekler.add(_tabelaCek());
+    if (forexAcik) istekler.add(_altinCek());
+    if (bistAcik && seciliKategori == 'Hisseler') istekler.add(_hisseleriCek());
+
+    if (istekler.isNotEmpty) {
+      await Future.wait(istekler);
+    }
+
     if (!mounted) return;
+
+    // 2. SADECE AÇIK OLAN PİYASALARDA fiyat değişimi ve parlama (tick) uygula!
     setState(() {
-      // Üst Tabela Mikro-Tick
+      // Üst Tabela: BIST endeksleri sadece BIST açıkken, Döviz/Altın ise Forex açıkken oynar
       for (var item in tabelaVerileri) {
-        if (_rnd.nextDouble() < 0.45 && item['raw_price'] != null) {
+        final String tip = item['tip']?.toString() ?? '';
+        final bool buKalemAcik = (tip == 'endeks') ? bistAcik : forexAcik;
+
+        if (buKalemAcik && _rnd.nextDouble() < 0.45 && item['raw_price'] != null) {
           final double raw = (item['raw_price'] as num).toDouble();
-          final double delta = raw * ((_rnd.nextDouble() - 0.49) * 0.0012); // ±%0.06 kademe
+          final double delta = raw * ((_rnd.nextDouble() - 0.49) * 0.0012);
           final double yeniFiyat = raw + delta;
           item['raw_price'] = yeniFiyat;
 
@@ -92,21 +102,37 @@ class _DashboardScreenState extends State<DashboardScreen> {
         }
       }
 
-      // Altın Piyasası Mikro-Tick
-      for (var altin in altinPiyasasi) {
-        if (_rnd.nextDouble() < 0.45 && altin['raw_price'] != null) {
-          final double raw = (altin['raw_price'] as num).toDouble();
-          if (raw <= 0) continue;
-          final double delta = raw * ((_rnd.nextDouble() - 0.49) * 0.0010);
-          final double yeniFiyat = raw + delta;
-          altin['raw_price'] = yeniFiyat;
-          altin['price'] = '₺${yeniFiyat.toStringAsFixed(2)}';
+      // Altın Piyasası: Sadece hafta içi Forex açıkken çalışır
+      if (forexAcik) {
+        for (var altin in altinPiyasasi) {
+          if (_rnd.nextDouble() < 0.45 && altin['raw_price'] != null) {
+            final double raw = (altin['raw_price'] as num).toDouble();
+            if (raw <= 0) continue;
+            final double delta = raw * ((_rnd.nextDouble() - 0.49) * 0.0010);
+            final double yeniFiyat = raw + delta;
+            altin['raw_price'] = yeniFiyat;
+            altin['price'] = '₺${yeniFiyat.toStringAsFixed(2)}';
+          }
         }
       }
 
-      // Günün Enleri (Kazananlar & Kaybedenler) Mikro-Tick
-      kazananlar = kazananlar.map((v) => _tickVarlik(v)).toList();
-      kaybedenler = kaybedenler.map((v) => _tickVarlik(v)).toList();
+      // Günün Enleri (Seçili Kategoriye Göre Akıllı Kontrol!)
+      bool aktifSekmeAcikMi = false;
+      if (seciliKategori == 'Kripto') {
+        aktifSekmeAcikMi = PiyasaSaatleri.isKriptoAcik(); // 7/24 True
+      } else if (seciliKategori == 'Hisseler') {
+        aktifSekmeAcikMi = bistAcik; // Hafta sonu, akşam ve 29 Ekim'de False!
+      } else if (seciliKategori.contains('Yabancı')) {
+        aktifSekmeAcikMi = abdAcik; // Sadece 16:30 - 23:59 arası True!
+      } else if (seciliKategori == 'Fonlar') {
+        aktifSekmeAcikMi = PiyasaSaatleri.isFonCanli(); // Her zaman False (Fonlar anlık değişmez)
+      }
+
+      // Eğer o an baktığın sekmenin borsası AÇIKSA fiyatları canlı oynat, KAPALIYSA dokunma!
+      if (aktifSekmeAcikMi) {
+        kazananlar = kazananlar.map((v) => _tickVarlik(v)).toList();
+        kaybedenler = kaybedenler.map((v) => _tickVarlik(v)).toList();
+      }
     });
   }
 
@@ -343,7 +369,9 @@ class _DashboardScreenState extends State<DashboardScreen> {
         actions: [
           IconButton(
             icon: Icon(Icons.notifications_none_rounded, color: colorScheme.onSurface),
-            onPressed: () {},
+            onPressed: () {
+              Navigator.push(context, MaterialPageRoute(builder: (context)=> PiyasaSaatleriScreen()));
+            },
           ),
           IconButton(
             icon: Icon(Icons.support_agent_rounded, color: colorScheme.onSurface),
@@ -614,35 +642,90 @@ class _DashboardScreenState extends State<DashboardScreen> {
     );
   }
 
-  Widget _buildVarlikTile(ColorScheme colorScheme, PiyasaVarlikModel varlik) {
+ Widget _buildVarlikTile(ColorScheme colorScheme, PiyasaVarlikModel varlik) {
     return InkWell(
       borderRadius: BorderRadius.circular(8),
       onTap: () {
+        // 1. Fonlar için farklı bir detay ekranın varsa oraya yönlendirirsin
+        if (seciliKategori == 'Fonlar') return;
+
+        // 2. BIST Hissesi ise ve elinde zaten detaylı raw veri varsa onu gönder
         if (seciliKategori == 'Hisseler') {
           final rawHisse = _rawHisseResults.firstWhere(
-            (r) => (r['symbol']?.toString().toUpperCase() ?? '') == varlik.sembol.toUpperCase(),
+            (r) => (r['symbol']?.toString().toUpperCase().trim() ?? '') == varlik.sembol.toUpperCase().trim(),
             orElse: () => null,
           );
           if (rawHisse != null) {
-            Navigator.push(context, MaterialPageRoute(builder: (_) => HisseDetayScreen(hisse: rawHisse)));
+            Navigator.push(
+              context, 
+              MaterialPageRoute(builder: (_) => HisseDetayScreen(hisse: rawHisse))
+            );
+            return;
           }
         }
+
+        // 3. KRİPTO, NASDAQ veya raw verisi o an elinde olmayan herhangi bir varlık için:
+        // Doğrudan seciliKategori bilgisini de içeriye basıyoruz!
+        final cleanSym = varlik.sembol.toString().toUpperCase().trim().replaceAll('/', '');
+        final gecisVerisi = {
+          'symbol': cleanSym,
+          'kod': cleanSym,
+          'kategori': seciliKategori, // 👈 İŞTE ÇÖZÜM: 'Kripto' veya 'Yabancı' bilgisini taşıyoruz
+          'full_name': varlik.baslik.isNotEmpty ? varlik.baslik : cleanSym,
+          'price': varlik.fiyat,
+          'change': varlik.degisim,
+        };
+
+        Navigator.push(
+          context,
+          MaterialPageRoute(builder: (_) => HisseDetayScreen(hisse: gecisVerisi)),
+        );
       },
       child: Padding(
         padding: const EdgeInsets.symmetric(vertical: 6.0),
         child: Row(
-          mainAxisAlignment: MainAxisAlignment.spaceBetween,
           children: [
+            VarlikLogoWidget(
+              symbol: varlik.sembol,
+              kategori: seciliKategori, // 'Hisseler', 'Kripto', 'Yabancı', 'Fonlar'
+              size: 28,
+            ),
+            const SizedBox(width: 8),
+
+            // Sembol ve Şirket/Coin Adı
             Expanded(
-              child: Text(
-                varlik.sembol,
-                style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.bold, color: colorScheme.onSurface),
-                overflow: TextOverflow.ellipsis,
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text(
+                    varlik.sembol,
+                    style: TextStyle(
+                      fontSize: 12.5,
+                      fontWeight: FontWeight.bold,
+                      color: colorScheme.onSurface,
+                    ),
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                  if (varlik.baslik.isNotEmpty && varlik.baslik != varlik.sembol)
+                    Text(
+                      varlik.baslik,
+                      style: TextStyle(
+                        fontSize: 10,
+                        color: colorScheme.onSurface.withValues(alpha: 0.6),
+                      ),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                ],
               ),
             ),
             const SizedBox(width: 6),
+
+            // Fiyat ve Yüzde Değişim
             Column(
               crossAxisAlignment: CrossAxisAlignment.end,
+              mainAxisSize: MainAxisSize.min,
               children: [
                 CanliFiyatText(
                   fiyatMetni: varlik.fiyat,

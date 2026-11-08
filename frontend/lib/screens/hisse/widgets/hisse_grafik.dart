@@ -49,7 +49,6 @@ class _HisseGrafikWidgetState extends State<HisseGrafikWidget> {
     });
 
     try {
-      // 🔥 İŞTE SİHİRLİ DOKUNUŞ BURASI! Eski satırı sildik, ApiService/AppConstants ile uyumlu hale getirdik.
       final uri = AppConstants.hisseTarihselUri(widget.symbol, _selectedPeriod);
       final res = await http.get(uri).timeout(const Duration(seconds: 12));
 
@@ -88,56 +87,179 @@ class _HisseGrafikWidgetState extends State<HisseGrafikWidget> {
 
   @override
   Widget build(BuildContext context) {
+    // Veri varsa istatistikleri hesapla
+    double? currentPrice, changePercent, highPrice, lowPrice;
+    if (_veriListesi.isNotEmpty) {
+      currentPrice = _veriListesi.last.close;
+      final ilkFiyat = _veriListesi.first.open;
+      changePercent = ilkFiyat > 0 ? ((currentPrice - ilkFiyat) / ilkFiyat) * 100 : 0.0;
+      highPrice = _veriListesi.map((e) => e.close).reduce((a, b) => a > b ? a : b);
+      lowPrice = _veriListesi.map((e) => e.close).reduce((a, b) => a < b ? a : b);
+    }
+
+    final isPositive = changePercent != null && changePercent >= 0;
+    final trendColor = isPositive ? const Color(0xFF00E676) : const Color(0xFFFF5252);
+
     return Column(
       children: [
+        // 1. EKLEME: Fiyat ve Değişim Özeti (Header)
+        if (_veriListesi.isNotEmpty && !_loading)
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 8, 16, 4),
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Text("Güncel Fiyat", style: TextStyle(color: Colors.white54, fontSize: 12)),
+                    const SizedBox(height: 4),
+                    Text(
+                      "₺${currentPrice!.toStringAsFixed(2)}",
+                      style: const TextStyle(color: Colors.white, fontSize: 22, fontWeight: FontWeight.bold, letterSpacing: 0.5),
+                    ),
+                  ],
+                ),
+                Column(
+                  crossAxisAlignment: CrossAxisAlignment.end,
+                  children: [
+                    const Text("Değişim", style: TextStyle(color: Colors.white54, fontSize: 12)),
+                    const SizedBox(height: 4),
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                      decoration: BoxDecoration(
+                        color: trendColor.withValues(alpha: 0.15),
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      child: Text(
+                        "${isPositive ? '+' : ''}${changePercent!.toStringAsFixed(2)}%",
+                        style: TextStyle(color: trendColor, fontWeight: FontWeight.bold, fontSize: 14),
+                      ),
+                    ),
+                  ],
+                ),
+              ],
+            ),
+          ),
+
+        // 2. EKLEME: En Yüksek / En Düşük Bilgi Çubuğu
+        if (_veriListesi.isNotEmpty && !_loading)
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 8.0),
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.spaceAround,
+              children: [
+                _buildStatChip("En Yüksek", "₺${highPrice!.toStringAsFixed(2)}", const Color(0xFF00E676)),
+                Container(width: 1, height: 20, color: Colors.white.withValues(alpha: 0.1)),
+                _buildStatChip("En Düşük", "₺${lowPrice!.toStringAsFixed(2)}", const Color(0xFFFF5252)),
+              ],
+            ),
+          ),
+
         Expanded(
           child: _loading
-              ? const Center(child: CircularProgressIndicator(strokeWidth: 2, color: Color(0xFF00D4FF)))
+              ? const Center(
+                  child: Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      CircularProgressIndicator(strokeWidth: 2.5, color: Color(0xFF00D4FF)),
+                      SizedBox(height: 16),
+                      Text("Veriler yükleniyor...", style: TextStyle(color: Colors.white54, fontSize: 13)),
+                    ],
+                  ),
+                )
               : _error != null || _veriListesi.isEmpty
-                  ? Center(child: Text(_error ?? "Veri bulunamadı.", style: const TextStyle(color: Colors.white38, fontSize: 12)))
+                  ? Center(
+                      child: Column(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          const Icon(Icons.area_chart_outlined, color: Colors.white24, size: 48),
+                          const SizedBox(height: 12),
+                          Text(_error ?? "Veri bulunamadı.", style: const TextStyle(color: Colors.white54, fontSize: 14)),
+                          const SizedBox(height: 16),
+                          ElevatedButton.icon(
+                            onPressed: _verileriCek,
+                            icon: const Icon(Icons.refresh_rounded, size: 18),
+                            label: const Text("Tekrar Dene"),
+                            style: ElevatedButton.styleFrom(
+                              backgroundColor: const Color(0xFF00D4FF),
+                              foregroundColor: Colors.black,
+                              elevation: 0,
+                              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                            ),
+                          ),
+                        ],
+                      ),
+                    )
                   : _buildLineChart(),
         ),
 
-        const SizedBox(height: 12),
+        const SizedBox(height: 16),
 
         Padding(
           padding: const EdgeInsets.symmetric(horizontal: 16.0),
-          child: Row(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: _periods.map((p) {
-              final isSelected = _selectedPeriod == p['value'];
-              return Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 4.0),
-                child: InkWell(
-                  borderRadius: BorderRadius.circular(10),
-                  onTap: () {
-                    if (_selectedPeriod != p['value']) {
-                      setState(() => _selectedPeriod = p['value']!);
-                      widget.onPeriodChanged(_selectedPeriod);
-                      _verileriCek();
-                    }
-                  },
-                  child: Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
-                    decoration: BoxDecoration(
-                      color: isSelected ? const Color(0xFF00D4FF) : Colors.white.withValues(alpha: 0.05),
+          child: Container(
+            padding: const EdgeInsets.all(4),
+            decoration: BoxDecoration(
+              color: Colors.white.withValues(alpha: 0.03),
+              borderRadius: BorderRadius.circular(14),
+              border: Border.all(color: Colors.white.withValues(alpha: 0.06)),
+            ),
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+              children: _periods.map((p) {
+                final isSelected = _selectedPeriod == p['value'];
+                return Expanded(
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 2.0),
+                    child: InkWell(
                       borderRadius: BorderRadius.circular(10),
-                    ),
-                    child: Text(
-                      p['label']!,
-                      style: TextStyle(
-                        color: isSelected ? Colors.black : Colors.white60,
-                        fontWeight: FontWeight.bold,
-                        fontSize: 12,
+                      onTap: () {
+                        if (_selectedPeriod != p['value']) {
+                          setState(() => _selectedPeriod = p['value']!);
+                          widget.onPeriodChanged(_selectedPeriod);
+                          _verileriCek();
+                        }
+                      },
+                      child: AnimatedContainer(
+                        duration: const Duration(milliseconds: 200),
+                        padding: const EdgeInsets.symmetric(vertical: 8),
+                        decoration: BoxDecoration(
+                          color: isSelected ? const Color(0xFF00D4FF) : Colors.transparent,
+                          borderRadius: BorderRadius.circular(10),
+                          boxShadow: isSelected
+                              ? [BoxShadow(color: const Color(0xFF00D4FF).withValues(alpha: 0.3), blurRadius: 8, offset: const Offset(0, 4))]
+                              : null,
+                        ),
+                        alignment: Alignment.center,
+                        child: Text(
+                          p['label']!,
+                          style: TextStyle(
+                            color: isSelected ? Colors.black : Colors.white54,
+                            fontWeight: isSelected ? FontWeight.bold : FontWeight.w500,
+                            fontSize: 13,
+                          ),
+                        ),
                       ),
                     ),
                   ),
-                ),
-              );
-            }).toList(),
+                );
+              }).toList(),
+            ),
           ),
         ),
+        const SizedBox(height: 8),
+      ],
+    );
+  }
 
+  // Yardımcı Widget: İstatistik Çipi
+  Widget _buildStatChip(String label, String value, Color color) {
+    return Column(
+      children: [
+        Text(label, style: const TextStyle(color: Colors.white38, fontSize: 11)),
+        const SizedBox(height: 4),
+        Text(value, style: TextStyle(color: color, fontWeight: FontWeight.w600, fontSize: 13)),
       ],
     );
   }
@@ -150,7 +272,6 @@ class _HisseGrafikWidgetState extends State<HisseGrafikWidget> {
     double minPrice = spots.map((s) => s.y).reduce((a, b) => a < b ? a : b);
     double maxPrice = spots.map((s) => s.y).reduce((a, b) => a > b ? a : b);
 
-    // Yatay sıkışmayı önleyen %10 dinamik nefes payı
     double padding = (maxPrice - minPrice) * 0.10;
     if (padding == 0) padding = minPrice * 0.05;
 
@@ -158,34 +279,58 @@ class _HisseGrafikWidgetState extends State<HisseGrafikWidget> {
     final color = isPositive ? const Color(0xFF00E676) : const Color(0xFFFF5252);
 
     return Padding(
-      padding: const EdgeInsets.fromLTRB(6, 0, 16, 0),
+      padding: const EdgeInsets.fromLTRB(8, 8, 8, 0),
       child: LineChart(
         LineChartData(
           gridData: FlGridData(
             show: true,
             drawVerticalLine: false,
             getDrawingHorizontalLine: (_) => FlLine(
-              color: Colors.white.withValues(alpha: 0.04),
+              color: Colors.white.withValues(alpha: 0.06),
               strokeWidth: 1,
+              dashArray: [5, 5],
             ),
           ),
           titlesData: FlTitlesData(
             topTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
-            rightTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
+            // 3. EKLEME: Sağ Tarafta Fiyat Etiketleri (Kullanıcı için çok daha anlaşılır)
+            rightTitles: AxisTitles(
+              sideTitles: SideTitles(
+                showTitles: true,
+                reservedSize: 45,
+                interval: (maxPrice - minPrice) / 4, // Yaklaşık 4 etiket göster
+                getTitlesWidget: (value, meta) {
+                  return Padding(
+                    padding: const EdgeInsets.only(right: 8.0),
+                    child: Text(
+                      '₺${value.toStringAsFixed(2)}',
+                      style: const TextStyle(color: Colors.white38, fontSize: 10),
+                      textAlign: TextAlign.right,
+                    ),
+                  );
+                },
+              ),
+            ),
             leftTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
             bottomTitles: AxisTitles(
               sideTitles: SideTitles(
                 showTitles: true,
-                reservedSize: 22,
-                interval: (_veriListesi.length / 4).clamp(1, double.infinity),
+                reservedSize: 32,
+                interval: (_veriListesi.length / 5).ceilToDouble().clamp(1, double.infinity),
                 getTitlesWidget: (val, _) {
                   int idx = val.toInt();
                   if (idx < 0 || idx >= _veriListesi.length) return const SizedBox.shrink();
+                  
+                  final date = _veriListesi[idx].date;
+                  final format = _selectedPeriod == '1d' || _selectedPeriod == '5d' 
+                      ? DateFormat('HH:mm') 
+                      : DateFormat('dd MMM');
+                      
                   return Padding(
-                    padding: const EdgeInsets.only(top: 6.0),
+                    padding: const EdgeInsets.only(top: 8.0),
                     child: Text(
-                      DateFormat('dd MMM').format(_veriListesi[idx].date),
-                      style: const TextStyle(color: Colors.white30, fontSize: 10),
+                      format.format(date),
+                      style: const TextStyle(color: Colors.white38, fontSize: 11, fontWeight: FontWeight.w500),
                     ),
                   );
                 },
@@ -196,13 +341,45 @@ class _HisseGrafikWidgetState extends State<HisseGrafikWidget> {
           minY: (minPrice - padding).clamp(0, double.infinity),
           maxY: maxPrice + padding,
           lineTouchData: LineTouchData(
+            handleBuiltInTouches: true,
+            // 4. EKLEME: Profesyonel Crosshair (Dikey Çizgi) ve Vurgulu Nokta
+            getTouchedSpotIndicator: (LineChartBarData barData, List<int> spotIndexes) {
+              return spotIndexes.map((index) {
+                return TouchedSpotIndicatorData(
+                  FlLine(
+                    color: Colors.white.withValues(alpha: 0.4),
+                    strokeWidth: 1.5,
+                    dashArray: [4, 4],
+                  ),
+                  FlDotData(
+                    show: true,
+                    getDotPainter: (spot, percent, bar, idx) => FlDotCirclePainter(
+                      radius: 5,
+                      color: Colors.white,
+                      strokeWidth: 2.5,
+                      strokeColor: color,
+                    ),
+                  ),
+                );
+              }).toList();
+            },
             touchTooltipData: LineTouchTooltipData(
+               tooltipPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
               getTooltipItems: (touchedSpots) {
                 return touchedSpots.map((spot) {
                   final item = _veriListesi[spot.spotIndex];
+                  final spotIsPositive = item.close >= _veriListesi.first.open;
+                  final textColor = spotIsPositive ? const Color(0xFF00E676) : const Color(0xFFFF5252);
+                  
                   return LineTooltipItem(
-                    "₺${spot.y.toStringAsFixed(2)}\n${DateFormat('dd.MM.yyyy HH:mm').format(item.date)}",
-                    const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 11),
+                    "₺${spot.y.toStringAsFixed(2)}\n",
+                    const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 14),
+                    children: [
+                      TextSpan(
+                        text: DateFormat('dd MMM yyyy, HH:mm').format(item.date),
+                        style: TextStyle(color: Colors.white54, fontWeight: FontWeight.w400, fontSize: 11),
+                      ),
+                    ],
                   );
                 }).toList();
               },
@@ -212,17 +389,22 @@ class _HisseGrafikWidgetState extends State<HisseGrafikWidget> {
             LineChartBarData(
               spots: spots,
               isCurved: true,
-              curveSmoothness: 0.2,
+              curveSmoothness: 0.3,
               color: color,
-              barWidth: 2.2,
+              barWidth: 3,
               isStrokeCapRound: true,
-              dotData: const FlDotData(show: false),
+              dotData: const FlDotData(show: false), // Normalde nokta yok, sadece touch'ta var
               belowBarData: BarAreaData(
                 show: true,
                 gradient: LinearGradient(
                   begin: Alignment.topCenter,
                   end: Alignment.bottomCenter,
-                  colors: [color.withValues(alpha: 0.25), color.withValues(alpha: 0.0)],
+                  colors: [
+                    color.withValues(alpha: 0.2),
+                    color.withValues(alpha: 0.05),
+                    color.withValues(alpha: 0.0),
+                  ],
+                  stops: const [0.0, 0.6, 1.0],
                 ),
               ),
             ),

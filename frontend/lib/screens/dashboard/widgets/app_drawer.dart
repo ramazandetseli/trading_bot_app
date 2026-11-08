@@ -1,4 +1,7 @@
 import 'package:flutter/material.dart';
+import 'package:trading_bot_app/portfolio/portfolio_bottom_sheet.dart';
+import 'package:trading_bot_app/screens/dashboard/piyasa_saatleri_screen.dart';
+import 'package:trading_bot_app/screens/profile/profile_screen.dart';
 
 class AppDrawer extends StatelessWidget {
   final String kullaniciAdi;
@@ -107,6 +110,15 @@ class AppDrawer extends StatelessWidget {
             ),
             const SizedBox(height: 16),
             const Divider(),
+            
+            ListTile(
+              leading: const Icon(Icons.timer_sharp),
+              title: const Text('Piyasa Saatleri'),
+              onTap: () {
+                Navigator.push(context, MaterialPageRoute(builder: (context) => PiyasaSaatleriScreen(),));  
+              },
+            ),
+            
 
             // Menü Linkleri
             ListTile(
@@ -114,11 +126,8 @@ class AppDrawer extends StatelessWidget {
               title: const Text('Profil & Hesap Ayarları'),
               onTap: () {},
             ),
-            ListTile(
-              leading: const Icon(Icons.account_balance_wallet_outlined),
-              title: const Text('Portföy & Varlıklarım'),
-              onTap: () {},
-            ),
+
+            
             ListTile(
               leading: const Icon(Icons.support_agent_rounded),
               title: const Text('Canlı Müşteri Hizmetleri'),
@@ -127,13 +136,17 @@ class AppDrawer extends StatelessWidget {
             ListTile(
               leading: const Icon(Icons.settings_outlined),
               title: const Text('Uygulama Ayarları'),
-              onTap: () {},
+              onTap: () {
+                Navigator.push(context, MaterialPageRoute(builder: (context) => SettingsScreen(),));
+              },
             ),
             const Spacer(),
             ListTile(
               leading: const Icon(Icons.logout_rounded, color: Colors.redAccent),
               title: const Text('Çıkış Yap', style: TextStyle(color: Colors.redAccent)),
-              onTap: () {},
+              onTap: () {
+                
+              },
             ),
             const SizedBox(height: 12),
           ],

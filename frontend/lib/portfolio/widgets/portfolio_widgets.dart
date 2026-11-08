@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:trading_bot_app/models/portfolio_item.dart';
-import 'portfolio_controller.dart';
+import 'package:trading_bot_app/screens/dashboard/widgets/varlik_avatar.dart';
 import 'portfolio_theme.dart';
 
 // --- 1. Dağılım Çubuğu ---
@@ -20,7 +20,7 @@ class PortfolioDistributionBar extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const Text("Varlık Dağılımı", style: TextStyle(color: Colors.white70, fontSize: 12, fontWeight: FontWeight.w600)),
+          const Text("Varlık Dağılımı (TL Karşılığı)", style: TextStyle(color: Colors.white70, fontSize: 12, fontWeight: FontWeight.w600)),
           const SizedBox(height: 10),
           ClipRRect(
             borderRadius: BorderRadius.circular(8),
@@ -77,7 +77,7 @@ class PortfolioFinancialSummary extends StatelessWidget {
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
               Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                const Text("Toplam Portföy Değeri", style: TextStyle(color: Colors.white54, fontSize: 11)),
+                const Text("Toplam Portföy Değeri (TL)", style: TextStyle(color: Colors.white54, fontSize: 11)),
                 const SizedBox(height: 4),
                 Text("₺${toplamGuncelDeger.toStringAsFixed(2)}", style: const TextStyle(color: Colors.white, fontSize: 22, fontWeight: FontWeight.w900)),
               ]),
@@ -133,29 +133,86 @@ class PortfolioAssetList extends StatelessWidget {
       itemBuilder: (context, index) {
         final item = items[index];
         final Color statusColor = item.isProfitable ? PortfolioTheme.green : PortfolioTheme.red;
+        
+        // Varlığın kendi para birimi sembolü ($ veya ₺)
+        final birim = item.currencySymbol;
+        final aktifFiyat = item.currentPrice > 0 ? item.currentPrice : item.buyPrice;
 
         return Dismissible(
           key: Key(item.id),
           direction: DismissDirection.endToStart,
-          background: Container(alignment: Alignment.centerRight, padding: const EdgeInsets.only(right: 20), decoration: BoxDecoration(color: Colors.redAccent.withValues(alpha: 0.2), borderRadius: BorderRadius.circular(14)), child: const Icon(Icons.delete_outline, color: Colors.redAccent)),
-          onDismissed: (_) => onDelete(item.id),
+          background: Container(
+            alignment: Alignment.centerRight,
+            padding: const EdgeInsets.only(right: 20),
+            decoration: BoxDecoration(
+              color: Colors.redAccent.withValues(alpha: 0.2), 
+              borderRadius: BorderRadius.circular(14),
+            ),
+            child: const Icon(Icons.delete_outline, color: Colors.redAccent),
+          ),
+          // 👇 Kritik Düzeltme: Kaydırma bittiği an önce yerel listeden siliyoruz, sonra controller'a bildiriyoruz
+          onDismissed: (direction) {
+            final silinecekId = item.id;
+            // Listeden anında uçur ki dismissed widget ağaçta kalmasın
+            items.removeWhere((element) => element.id == silinecekId);
+            // Ardından controller'daki silme fonksiyonunu tetikle
+            onDelete(silinecekId);
+          },
           child: Container(
             padding: const EdgeInsets.all(12),
-            decoration: BoxDecoration(color: PortfolioTheme.card, borderRadius: BorderRadius.circular(14), border: Border.all(color: PortfolioTheme.border)),
+            decoration: BoxDecoration(
+              color: PortfolioTheme.card, 
+              borderRadius: BorderRadius.circular(14), 
+              border: Border.all(color: PortfolioTheme.border),
+            ),
             child: Row(
               children: [
-                CircleAvatar(radius: 18, backgroundColor: const Color(0xFF1E293B), child: Text(item.symbol.length > 2 ? item.symbol.substring(0, 2) : item.symbol, style: const TextStyle(color: Colors.white, fontSize: 11, fontWeight: FontWeight.bold))),
+                VarlikLogoWidget(
+                  symbol: item.symbol,
+                  size: 32,
+                ),
                 const SizedBox(width: 12),
-                Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                  Text(item.symbol, style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 13)),
-                  const SizedBox(height: 2),
-                  Text("${item.lotQuantity.toStringAsFixed(0)} Adet • ₺${item.buyPrice.toStringAsFixed(2)}", style: const TextStyle(color: Colors.white38, fontSize: 10)),
-                ])),
-                Column(crossAxisAlignment: CrossAxisAlignment.end, children: [
-                  Text("₺${item.currentValue.toStringAsFixed(2)}", style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 13)),
-                  const SizedBox(height: 2),
-                  Text("${item.isProfitable ? '+' : ''}%${item.profitLossPercentage.toStringAsFixed(2)}", style: TextStyle(color: statusColor, fontSize: 10, fontWeight: FontWeight.w600)),
-                ]),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
+                        children: [
+                          Text(item.symbol, style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 13)),
+                          const SizedBox(width: 6),
+                          if (item.isUsdAsset)
+                            Container(
+                              padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1),
+                              decoration: BoxDecoration(
+                                color: Colors.orangeAccent.withValues(alpha: 0.15),
+                                borderRadius: BorderRadius.circular(4),
+                              ),
+                              child: const Text("USD", style: TextStyle(color: Colors.orangeAccent, fontSize: 8.5, fontWeight: FontWeight.bold)),
+                            ),
+                        ],
+                      ),
+                      const SizedBox(height: 2),
+                      Text(
+                        "${item.lotQuantity.toStringAsFixed(item.lotQuantity.truncateToDouble() == item.lotQuantity ? 0 : 2)} Adet • $birim${item.buyPrice.toStringAsFixed(2)} maliyet",
+                        style: const TextStyle(color: Colors.white38, fontSize: 10),
+                      ),
+                    ],
+                  ),
+                ),
+                Column(
+                  crossAxisAlignment: CrossAxisAlignment.end,
+                  children: [
+                    Text(
+                      "$birim${item.nativeCurrentValue.toStringAsFixed(2)}",
+                      style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 13),
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      "${item.isProfitable ? '+' : ''}%${item.profitLossPercentage.toStringAsFixed(2)}",
+                      style: TextStyle(color: statusColor, fontSize: 10, fontWeight: FontWeight.w600),
+                    ),
+                  ],
+                ),
               ],
             ),
           ),

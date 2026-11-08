@@ -9,7 +9,10 @@ from routers.ai_router import router as ai_router
 from routers.piyasa import router as piyasa_router
 
 app = FastAPI(title="Finans API", version="2.0")
+app = FastAPI(title="Quant Lookalike Engine")
 
+# Router'ı projeye dahil ediyoruz
+app.include_router(pattern_router, prefix="/api")
 # CORS Ayarları
 app.add_middleware(
     CORSMiddleware,
