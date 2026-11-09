@@ -3,14 +3,18 @@ import 'dart:convert';
 import 'dart:math';
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
+import 'package:intl/intl.dart';
 import 'package:trading_bot_app/constants/app_constants.dart';
 import 'package:trading_bot_app/constants/piyasaSaatler.dart';
+import 'package:trading_bot_app/models/ekonomik_takvim_model.dart';
 import 'package:trading_bot_app/models/hisse_model.dart';
 import 'package:trading_bot_app/models/piyasa_varlik_model.dart';
+import 'package:trading_bot_app/screens/dashboard/ekonomik_takvim_screen.dart';
 import 'package:trading_bot_app/screens/dashboard/piyasa_saatleri_screen.dart';
 import 'package:trading_bot_app/screens/dashboard/widgets/app_drawer.dart';
 import 'package:trading_bot_app/screens/dashboard/widgets/canli_fiyat_text.dart';
 import 'package:trading_bot_app/screens/dashboard/widgets/market_search_screen.dart';
+import 'package:trading_bot_app/screens/dashboard/widgets/temettu_takvim_card.dart';
 import 'package:trading_bot_app/screens/dashboard/widgets/varlik_avatar.dart';
 import 'package:trading_bot_app/screens/hisse/stock_detail_screen.dart';
 
@@ -45,11 +49,15 @@ class _DashboardScreenState extends State<DashboardScreen> {
   Timer? _canliPiyasaTimer;
   final Random _rnd = Random();
 
+  bool _takvimLoading = true;
+  List<EkonomikOlay> _oncelikliTakvimOlaylari = [];
+
   @override
   void initState() {
     super.initState();
     _tumVerileriCek();
     _canliAkisiBaslat();
+    _ekonomikTakvimOzetCek();
   }
 
   @override
@@ -136,6 +144,33 @@ class _DashboardScreenState extends State<DashboardScreen> {
     });
   }
 
+
+
+  Future<void> _ekonomikTakvimOzetCek() async {
+    try {
+      final res = await http.get(Uri.parse(AppConstants.ekonomikTakvimUrl)).timeout(const Duration(seconds: 8));
+
+      if (res.statusCode == 200) {
+        final data = TakvimResponse.fromJson(json.decode(utf8.decode(res.bodyBytes)));
+        
+
+        List<EkonomikOlay> havuz = [];
+        havuz.addAll(data.yerel);
+        havuz.addAll(data.global.where((e) => e.importanceScore >= 2));
+        havuz.sort((a, b) => a.date.compareTo(b.date));
+
+        if (mounted) {
+          setState(() {
+            _oncelikliTakvimOlaylari = havuz.take(3).toList();
+            _takvimLoading = false;
+          });
+        }
+      }
+    } catch (_) {
+      if (mounted) setState(() => _takvimLoading = false);
+    }
+  }
+
   PiyasaVarlikModel _tickVarlik(PiyasaVarlikModel v) {
     if (_rnd.nextDouble() > 0.45) return v; // Her saniye hepsi birden yanmasın, doğal dursun
     final String sembolHarf = v.fiyat.startsWith('\$') ? '\$' : '₺';
@@ -200,7 +235,8 @@ class _DashboardScreenState extends State<DashboardScreen> {
     }
   }
 
-  // 1B. Sadece Altın Piyasası Verisi (Bağımsız - Tabela çökse de altın gelir)
+
+
   Future<void> _altinCek() async {
     try {
       final altinResponse = await http
@@ -412,7 +448,8 @@ class _DashboardScreenState extends State<DashboardScreen> {
                     _buildHalkaArzBolumu(colorScheme),
                     const SizedBox(height: 28),
 
-                    _buildTemettuBolumu(colorScheme),
+                    TemettuTakvimWidget(),
+
                     const SizedBox(height: 36),
                   ],
                 ),
@@ -824,24 +861,70 @@ class _DashboardScreenState extends State<DashboardScreen> {
   }
 
   Widget _buildEkonomikTakvimBolumu(ColorScheme colorScheme) {
-    final olaylar = [
-      {"ulke": "🇹🇷", "saat": "14:00", "olay": "TCMB Politika Faiz Kararı", "beklenti": "%47.50", "onceki": "%50.00"},
-      {"ulke": "🇺🇸", "saat": "15:30", "olay": "ABD Çekirdek TÜFE (Yıllık)", "beklenti": "%3.2", "onceki": "%3.3"},
-      {"ulke": "🇪🇺", "saat": "16:15", "olay": "ECB Faiz Kararı", "beklenti": "%3.40", "onceki": "%3.65"},
-    ];
-
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Row(
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
           children: [
-            const Icon(Icons.calendar_month_rounded, color: Colors.blueAccent, size: 20),
-            const SizedBox(width: 6),
-            Text('Ekonomik Takvim', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: colorScheme.onSurface)),
+            Row(
+              children: [
+                const Icon(Icons.calendar_month_rounded, color: Colors.blueAccent, size: 20),
+                const SizedBox(width: 6),
+                Text('Ekonomik Takvim', 
+                  style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: colorScheme.onSurface)),
+              ],
+            ),
+            InkWell(
+              onTap: () {
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(builder: (_) => const EkonomikTakvimScreen()),
+                );
+              },
+              borderRadius: BorderRadius.circular(8),
+              child: const Padding(
+                padding: EdgeInsets.symmetric(horizontal: 6, vertical: 4),
+                child: Row(
+                  children: [
+                    Text("Tümü", style: TextStyle(color: Colors.blueAccent, fontSize: 12, fontWeight: FontWeight.bold)),
+                    Icon(Icons.chevron_right, color: Colors.blueAccent, size: 16),
+                  ],
+                ),
+              ),
+            ),
           ],
         ),
         const SizedBox(height: 12),
-        ...olaylar.map((o) => Container(
+        if (_takvimLoading)
+          const Center(
+            child: Padding(
+              padding: EdgeInsets.all(16.0),
+              child: SizedBox(
+                width: 20, height: 20, 
+                child: CircularProgressIndicator(strokeWidth: 2, color: Colors.blueAccent),
+              ),
+            ),
+          )
+        else if (_oncelikliTakvimOlaylari.isEmpty)
+          Padding(
+            padding: const EdgeInsets.symmetric(vertical: 12.0),
+            child: Text(
+              "Yakın zamanda kritik veri akışı yok.",
+              style: TextStyle(color: colorScheme.onSurfaceVariant, fontSize: 13),
+            ),
+          )
+        else
+          ..._oncelikliTakvimOlaylari.map((olay) {
+            final saat = DateFormat('dd MMM HH:mm').format(olay.date);
+            // Önem derecesine göre sol şerit rengi
+            final borderRenk = olay.importanceScore >= 3 
+                ? Colors.redAccent 
+                : olay.importanceScore == 2 
+                    ? Colors.amber 
+                    : Colors.grey;
+
+            return Container(
               margin: const EdgeInsets.only(bottom: 8),
               padding: const EdgeInsets.all(12),
               decoration: BoxDecoration(
@@ -851,21 +934,40 @@ class _DashboardScreenState extends State<DashboardScreen> {
               ),
               child: Row(
                 children: [
-                  Text(o['ulke']!, style: const TextStyle(fontSize: 20)),
+                  Container(
+                    width: 4,
+                    height: 32,
+                    decoration: BoxDecoration(
+                      color: borderRenk,
+                      borderRadius: BorderRadius.circular(2),
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  Text(olay.flag, style: const TextStyle(fontSize: 20)),
                   const SizedBox(width: 10),
                   Expanded(
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        Text(o['olay']!, style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.bold, color: colorScheme.onSurface)),
-                        Text('Beklenti: ${o['beklenti']}  |  Önceki: ${o['onceki']}', style: TextStyle(fontSize: 11, color: colorScheme.onSurfaceVariant)),
+                        Text(
+                          olay.title, 
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.bold, color: colorScheme.onSurface)
+                        ),
+                        Text(
+                          'Beklenti: ${olay.formatDeger(olay.forecast)}  |  Önceki: ${olay.formatDeger(olay.previous)}', 
+                          style: TextStyle(fontSize: 11, color: colorScheme.onSurfaceVariant)
+                        ),
                       ],
                     ),
                   ),
-                  Text(o['saat']!, style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: colorScheme.primary)),
+                  const SizedBox(width: 6),
+                  Text(saat, style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: colorScheme.primary)),
                 ],
               ),
-            )),
+            );
+          }),
       ],
     );
   }
@@ -935,76 +1037,5 @@ class _DashboardScreenState extends State<DashboardScreen> {
     );
   }
 
-  Widget _buildTemettuBolumu(ColorScheme colorScheme) {
-    final temettuler = [
-      {"kod": "TUPRS", "ad": "Tüpraş", "tarih": "27 Eyl", "hisseBasi": "₺10.74", "verim": "%6.8"},
-      {"kod": "FROTO", "ad": "Ford Otosan", "tarih": "18 Eki", "hisseBasi": "₺29.70", "verim": "%2.9"},
-      {"kod": "KCHOL", "ad": "Koç Holding", "tarih": "24 Eki", "hisseBasi": "₺8.00", "verim": "%3.5"},
-    ];
 
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Row(
-          children: [
-            const Icon(Icons.savings_rounded, color: Colors.teal, size: 20),
-            const SizedBox(width: 6),
-            Text('Temettü Takvimi', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: colorScheme.onSurface)),
-          ],
-        ),
-        const SizedBox(height: 12),
-        ...temettuler.map((t) => Container(
-              margin: const EdgeInsets.only(bottom: 8),
-              padding: const EdgeInsets.all(12),
-              decoration: BoxDecoration(
-                color: colorScheme.surfaceContainerHigh,
-                borderRadius: BorderRadius.circular(12),
-                border: Border.all(color: colorScheme.outlineVariant.withValues(alpha: 0.2)),
-              ),
-              child: Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: [
-                  Expanded(
-                    child: Row(
-                      children: [
-                        Container(
-                          width: 44,
-                          height: 44,
-                          decoration: BoxDecoration(
-                            color: colorScheme.primary.withValues(alpha: 0.1),
-                            borderRadius: BorderRadius.circular(10),
-                          ),
-                          alignment: Alignment.center,
-                          child: Text(t['kod']!, style: TextStyle(fontWeight: FontWeight.bold, fontSize: 11, color: colorScheme.primary)),
-                        ),
-                        const SizedBox(width: 12),
-                        Expanded(
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Text(
-                                t['ad']!,
-                                style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: colorScheme.onSurface),
-                                overflow: TextOverflow.ellipsis,
-                              ),
-                              Text('Tarih: ${t['tarih']}', style: TextStyle(fontSize: 11, color: colorScheme.onSurfaceVariant)),
-                            ],
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                  Column(
-                    crossAxisAlignment: CrossAxisAlignment.end,
-                    children: [
-                      Text(t['hisseBasi']!, style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.bold, color: colorScheme.onSurface)),
-                      Text('Verim: ${t['verim']}', style: const TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: Color(0xFF00C853))),
-                    ],
-                  ),
-                ],
-              ),
-            )),
-      ],
-    );
-  }
 }

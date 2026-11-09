@@ -83,4 +83,7 @@ class AppConstants {
   static Uri get fonEnleriGet => Uri.parse('$baseUrl/api/piyasa/fon-enleri');
   static Uri get yabanciPiyasaGet => Uri.parse('$baseUrl/api/piyasa/yabanci-piyasa');
   static Uri get altinGet => Uri.parse('$baseUrl/api/piyasa/altinlar');
+
+  static final String ekonomikTakvimUrl = "$baseUrl/api/takvim/olaylar";
+  static final String temettuTakvimUrl = "$baseUrl/api/temettu/takvim";
 }

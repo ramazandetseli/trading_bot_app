@@ -7,12 +7,18 @@ from routers.hisse import router as hisse_router
 from routers.kullanici import router as kullanici_router
 from routers.ai_router import router as ai_router
 from routers.piyasa import router as piyasa_router
+from routers.economic_calendar import router as calendar_router
+from routers.temettu import router as temettu_router
 
 app = FastAPI(title="Finans API", version="2.0")
 app = FastAPI(title="Quant Lookalike Engine")
 
 # Router'ı projeye dahil ediyoruz
-app.include_router(pattern_router, prefix="/api")
+#app.include_router(pattern_router, prefix="/api")
+app.include_router(calendar_router, prefix="/api")
+
+app.include_router(temettu_router, prefix="/api")
+
 # CORS Ayarları
 app.add_middleware(
     CORSMiddleware,
